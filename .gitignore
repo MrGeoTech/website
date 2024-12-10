@@ -1,0 +1,5 @@
+/docs
+/config/*.pid
+/config/*.sock
+/config/logs/*.log
+/config/logs/*.pid

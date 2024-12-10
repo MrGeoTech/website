@@ -1,0 +1,215 @@
+main {
+    max-height: calc(100vh - 13.5rem);
+    padding: 4rem;
+    font-family: "Iosevka Web";
+    font-size: 1rem;
+    line-height: 1.6;
+    color: var(--text);
+    background-color: var(--base);
+    border-radius: 8px;
+    overflow-y: scroll;
+}
+
+/* Headings */
+main h1, main h2, main h3, main h4, main h5, main h6 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+main h1 { font-size: 2rem; }
+main h2 { font-size: 1.75rem; }
+main h3 { font-size: 1.5rem; }
+main h4 { font-size: 1.25rem; }
+main h5 { font-size: 1.125rem; }
+main h6 { font-size: 1rem; }
+
+/* Paragraphs */
+main p {
+    margin: 1rem 0;
+}
+
+/* Links */
+main a {
+    color: var(--blue);
+    text-decoration: none;
+    border-bottom: 1px dashed var(--blue);
+}
+
+main a:hover {
+    text-decoration: underline;
+}
+
+/* Blockquotes */
+main blockquote {
+    margin: 1rem 0;
+    padding: 0.75rem 1.5rem;
+    border-left: 4px solid var(--overlay2);
+    background-color: var(--surface0);
+    font-style: italic;
+    color: var(--subtext0);
+}
+
+/* Code Blocks */
+main pre {
+    margin: 1.5rem 0;
+    padding: 1rem;
+    background-color: var(--crust);
+    border-radius: 8px;
+    overflow-x: auto;
+    color: var(--text);
+}
+
+main code {
+    font-family: 'IosevkaTerm Web', monospace;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+}
+
+/* Lists */
+main ul, main ol {
+    margin: 1rem 0;
+    padding-left: 2rem;
+}
+
+main ul li {
+    list-style-type: disc;
+}
+
+main ol li {
+    list-style-type: decimal;
+}
+
+/* Tables */
+main table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    background-color: var(--base);
+}
+
+main table th, main table td {
+    border: 1px solid var(--overlay1);
+    padding: 0.5rem;
+    text-align: left;
+}
+
+main table th {
+    background-color: var(--surface0);
+    color: var(--text);
+    font-weight: bold;
+}
+
+/* Horizontal Rules */
+main hr {
+    border: none;
+    border-top: 1px solid var(--overlay1);
+    margin: 2rem 0;
+}
+
+/* Images */
+main img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    margin: 1rem 0;
+}
+
+input[type=text], input[type=password], button { font-family: "Iosevka Web"; }
+
+#password {
+    padding: 5px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 5px;
+    background-color: transparent;
+    color: var(--text);
+    outline: none;
+    transition: background-color 0.3s;
+}
+
+#password:focus {
+    background-color: var(--surface0);
+    color: var(--text);
+}
+#password-submit {
+    padding: 5px 10px;
+    border: 1px solid var(--text-border);
+    border-radius: 5px;
+    background-color: transparent;
+    color: var(--text);
+    outline: none;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.2s;
+}
+
+#password-submit:hover {
+    background-color: var(--surface0);
+    transform: translateY(-2px);
+}
+
+#password-submit:active {
+    transform: translateY(0);
+}
+
+/* Styles for the download button container */
+#download-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+}
+
+/* The download button itself */
+#download-button {
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+    background-color: var(--surface1);
+    color: var(--text);
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+#download-button:hover {
+    background-color: var(--surface2);
+}
+
+/* The dropdown container */
+#download-options {
+    display: none;
+    position: absolute;
+    bottom: 50px;
+    right: 0;
+    background-color: var(--surface0);
+    border: 1px solid rgba(var(--text-rgb), 0.1); /* Ensure your --text-rgb variable is defined */
+    border-radius: 5px;
+    padding: 10px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+/* Styles for the list inside the dropdown */
+#download-options ul {
+    list-style: none!important;
+    margin: 0;
+    padding: 0;
+}
+
+/* Each list item */
+#download-options ul li {
+    list-style-type: none!important;
+    margin: 5px 0;
+}
+
+/* Links inside the dropdown */
+#download-options ul li a {
+    text-decoration: none;
+    color: var(--text);
+    display: block;
+    padding: 5px;
+    border-radius: 3px;
+    transition: background-color 0.2s;
+}
+
+#download-options ul li a:hover {
+    background-color: var(--surface1);
+}
