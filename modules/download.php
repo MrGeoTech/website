@@ -23,6 +23,34 @@ function removeMetaTags($filePath) {
     return $content;
 }
 
+function moveImagesToTemp($markdownContent, $tempDir) {
+    // Regular expression to match image paths in Markdown ![alt text](image_path)
+    $pattern = '/!\[.*?\]\((.*?)\)/';
+    $updatedContent = $markdownContent;
+
+    // Create temp directory for images
+    $imageTempDir = $tempDir . '/Images';
+    if (!is_dir($imageTempDir)) {
+        mkdir($imageTempDir, 0777, true);
+    }
+
+    // Find and process each image
+    if (preg_match_all($pattern, $markdownContent, $matches)) {
+        foreach ($matches[1] as $imagePath) {
+            $realImagePath = realpath($imagePath);
+            if ($realImagePath && file_exists($realImagePath)) {
+                $destination = $imageTempDir . '/' . basename($realImagePath);
+                copy($realImagePath, $destination);
+
+                // Replace image path in Markdown with /tmp/Images/
+                $updatedContent = str_replace($imagePath, $destination, $updatedContent);
+            }
+        }
+    }
+
+    return $updatedContent;
+}
+
 ob_start();
 
 // Sanitize input parameters
@@ -70,14 +98,19 @@ switch ($format) {
         exit;
 
     case 'pdf':
-        // Convert Markdown to PDF using Pandoc
-        $tempFilePath = sys_get_temp_dir() . "/$baseName.md";
-        $tempOutputPath = sys_get_temp_dir() . "/$baseName.pdf";
+        // Prepare temporary paths
+        $tempDir = sys_get_temp_dir();
+        $tempFilePath = $tempDir . "/$baseName.md";
+        $tempOutputPath = $tempDir . "/$baseName.pdf";
 
-        // Save the cleaned Markdown content to a temporary file
-        file_put_contents($tempFilePath, $contentWithoutMeta);
+        // Move images and update Markdown content
+        $contentWithUpdatedPaths = moveImagesToTemp($contentWithoutMeta, $tempDir);
 
-        putenv('PATH=' . getenv('PATH') . ':/nix/store/k3dqr1xajnqc8k2ydr2ggwqy8q8ws1c3-pandoc-cli-3.1.11.1/bin/');
+        // Save the updated Markdown content to a temporary file
+        file_put_contents($tempFilePath, $contentWithUpdatedPaths);
+
+        // Ensure pandoc can find its engine
+        putenv('PATH=' . getenv('PATH') . ':/nix/store/k3dqr1xajnqc8k2ydr2ggwqy8q8ws1c3-pandoc-cli-3.1.11.1/bin/:/usr/bin/');
 
         // Command to run Pandoc
         $command = escapeshellcmd("pandoc " . escapeshellarg($tempFilePath) . " -o " . escapeshellarg($tempOutputPath));
@@ -104,7 +137,6 @@ switch ($format) {
         unlink($tempOutputPath);
         ob_end_flush();
         exit;
-}
 
 // Fallback for unsupported formats
 http_response_code(400);
