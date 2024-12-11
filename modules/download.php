@@ -137,6 +137,7 @@ switch ($format) {
         unlink($tempOutputPath);
         ob_end_flush();
         exit;
+}
 
 // Fallback for unsupported formats
 http_response_code(400);
