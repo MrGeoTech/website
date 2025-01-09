@@ -87,7 +87,7 @@ function renderSidebar($currentSection) {
      * @param array $contents Directory structure.
      * @param string $currentPath Path to the current section.
      */
-    function generateSidebarMenu($contents, $currentPath, $currentSection) {
+    function generateSidebarMenu($contents, $currentPath, $currentSection, $currentFile) {
         echo "<ul class='sidebar-list'>";
     
         foreach ($contents as $name => $value) {
@@ -96,20 +96,23 @@ function renderSidebar($currentSection) {
                 echo "<li class='directory'>
                         <span class='directory-name'>$name</span>
                         <div class='sub-list'>";
-                generateSidebarMenu($value, "$currentPath/$name", $currentSection);
+                generateSidebarMenu($value, "$currentPath/$name", $currentSection, $currentFile);
                 echo "</div></li>";
             } else {
                 // For files, create a link with the current section and file path as URL parameters
-                $title = getMarkdownTitle("$currentPath/$value") ?? pathinfo($value, PATHINFO_FILENAME);
-                $encodedFilePath = urlencode("$currentPath/$value");  // Encoding the file path for URL safety
+                $fullFilePath = "$currentPath/$value";
+                $title = getMarkdownTitle($fullFilePath) ?? pathinfo($value, PATHINFO_FILENAME);
+                $encodedFilePath = urlencode($fullFilePath); // Encoding the file path for URL safety
+                
+                // Check if this is the current file and add the 'active' class
+                $isActive = ($fullFilePath === $currentFile) ? "style='font-weight:bold;'" : "";
                 echo "<li>
-                        <a href='/?section=$currentSection&file=$encodedFilePath' class='sidebar-link'>$title</a>
+                        <a href='/?section=$currentSection&file=$encodedFilePath' class='sidebar-link' $isActive>$title</a>
                       </li>";
             }
         }
         echo "</ul>";
     }
-
 
     $currentPath = "docs/$currentSection";
     if (!is_dir($currentPath)) {
@@ -121,14 +124,32 @@ function renderSidebar($currentSection) {
     <link rel="stylesheet" href="modules/sidebar.css">
     <aside class="sidebar">
         <h1>Directory</h1>
-        <?php generateSidebarMenu($contents, $currentPath, $currentSection); ?>
+        <?php 
+            $file = $_GET['file'] ?? '';
+            generateSidebarMenu($contents, $currentPath, $currentSection, $file);
+        ?>
         <div class='sidebar-padding'></div>
     </aside>
 
     <script>
-        document.querySelectorAll('.directory-name, .sub-directory-name').forEach(function(el) {
-            el.addEventListener('click', function() {
-                this.nextElementSibling.classList.toggle('visible');
+        document.addEventListener("DOMContentLoaded", function () {
+            const currentFileLink = document.querySelector(".sidebar-link[style*='font-weight:bold;']");
+            if (currentFileLink) {
+                let parent = currentFileLink.closest(".sub-list");
+                while (parent) {
+                    parent.classList.add("visible");
+                    parent = parent.closest(".directory")?.closest(".sub-list");
+                }
+            }
+        });
+    
+        // Handle toggling submenus when directory names are clicked
+        document.querySelectorAll('.directory-name, .sub-directory-name').forEach(function (el) {
+            el.addEventListener('click', function () {
+                const submenu = this.nextElementSibling;
+                if (submenu) {
+                    submenu.classList.toggle('visible');
+                }
             });
         });
     </script>

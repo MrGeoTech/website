@@ -145,6 +145,13 @@ function renderFile($file) {
     // Get the requested file from the query string
     $filePath = $baseDir . '/' . ltrim($file, '/');
 
+    // Extract the sub-section from the file path
+    $pathParts = explode('/', $file);
+    $subSection = isset($pathParts[2]) ? $pathParts[2] : 'Unknown Sub-section';
+    
+    // Display the sub-section at the top of the page
+    echo "<h1>" . htmlspecialchars($subSection, ENT_QUOTES, 'UTF-8') . "</h1>";
+
     // Validate the file path
     if (!validateFile($filePath, $baseDir)) {
         http_response_code(400);
