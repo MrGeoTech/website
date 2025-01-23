@@ -53,7 +53,6 @@ main blockquote {
 /* Code Blocks */
 main pre {
     margin: 1.5rem 0;
-    padding: 1rem;
     background-color: var(--crust);
     border-radius: 8px;
     overflow-x: auto;
@@ -64,6 +63,7 @@ main code {
     font-family: 'Roboto Mono', monospace;
     padding: 0.2rem 0.4rem;
     border-radius: 4px;
+    background-color: var(--crust)!important;
 }
 
 /* Lists */

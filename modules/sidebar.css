@@ -17,6 +17,10 @@
   display: none;
 }
 
+.sidebar-list > li {
+    margin: 0.5rem 0;
+}
+
 #collapsible.collapsed > .sidebar {
     overflow: hidden;
     width: 0;

@@ -65,7 +65,11 @@
     </div>
 
     <script src="scripts.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/prismjs@v1.x/plugins/autoloader/prism-autoloader.min.js"></script>
+    <!-- Highlighting -->
+    <link rel="stylesheet" href="//unpkg.com/@catppuccin/highlightjs@1.0.0/css/catppuccin-mocha.css">
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/gh/s9e/hljs-loader@1.0.36/loader.min.js"
+        crossorigin="anonymous"
+        integrity="sha384-ENgSnUL5UgeHebIZiuTpRAT4+a3licJ29eIcCndVuHFJvncvtdJoQL0XIBStbgl9"></script>
 </body>
 </html>
