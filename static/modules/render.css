@@ -1,7 +1,6 @@
 main {
     max-height: calc(100vh - 13.5rem);
     padding: 4rem;
-    font-family: "Iosevka Web";
     font-size: 1rem;
     line-height: 1.6;
     color: var(--text);
@@ -62,7 +61,7 @@ main pre {
 }
 
 main code {
-    font-family: 'IosevkaTerm Web', monospace;
+    font-family: 'Roboto Mono', monospace;
     padding: 0.2rem 0.4rem;
     border-radius: 4px;
 }
@@ -116,7 +115,7 @@ main img {
     margin: 1rem 0;
 }
 
-input[type=text], input[type=password], button { font-family: "Iosevka Web"; }
+input[type=text], input[type=password], button { font-family: "Roboto", serif; }
 
 #password {
     padding: 5px 10px;
