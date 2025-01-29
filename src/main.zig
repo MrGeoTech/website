@@ -2,6 +2,7 @@ const builtin = @import("builtin");
 const std = @import("std");
 const zap = @import("zap");
 
+const Router = @import("router.zig");
 const Allocator = std.mem.Allocator;
 
 const assert = std.debug.assert;
@@ -14,27 +15,24 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
+    var router = try Router.init(allocator);
+    defer router.deinit();
+
+    var router_zap = try router.getRouter();
+    defer router_zap.deinit();
+
     std.log.info("Starting server", .{});
 
     var listener = zap.HttpListener.init(.{
         .port = if (builtin.mode == .Debug) 8080 else 82,
-        .on_request = dispatch_routes,
+        .on_request = router_zap.on_request_handler(),
         .log = true,
+        .max_clients = 10_000,
     });
+    try listener.listen();
 
-    std.log.info("Starting http server", .{});
-
-}
-
-var routes: std.StringHashMap(zap.HttpRequestFn) = undefined;
-
-pub fn setup_routes(allocator: Allocator) !void {
-    routes = std.StringHashMap(zap.HttpRequestFn).init(allocator);
-    try routes.put("", );
-}
-
-pub fn dispatch_routes(request: zap.Request) void {}
-
-pub fn serve_index(request: zap.Request) void {
-    request.sendFile("static/base.html");
+    zap.start(.{
+        .threads = 1,
+        .workers = 1,
+    });
 }
