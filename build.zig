@@ -4,12 +4,19 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const zap = b.dependency("zap", .{
+        .target = target,
+        .optimize = optimize,
+        .openssl = false,
+    });
+
     const exe = b.addExecutable(.{
         .name = "website",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
+    exe.root_module.addImport("zap", zap.module("zap"));
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
