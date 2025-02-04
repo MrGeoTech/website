@@ -135,8 +135,49 @@ function processCommand() {
             current_content += "<p>" + fetch_str + "</p>";
             break;
         case "cd":
+            if (split.length < 2) break;
+
+            try {
+                const response = await fetch(
+                    "/cd?path=" + encodeURIComponent(current_location + current_input), 
+                    {
+                        method: "GET",
+                        headers: { "Content-Type": "text/plain" }
+                    }
+                );
+
+                if (response.ok)
+                    current_location = await response.body;
+                else
+                    current_content += "<p>" + await response.body + "</p>";
+            } catch (error) {
+                console.error("Error:", error);
+                current_content += "<p>An error occured while trying to execute '" + current_input + "'!</p>";
+            }
             break;
         case "ls":
+            const location = (split.length < 2) ? "." else split[1];
+
+            try {
+                const response = await fetch(
+                    "/ls?path=" + 
+                        encodeURIComponent(current_location) + 
+                        "&location=" + 
+                        encodeURIComponent(location), 
+                    {
+                        method: "GET",
+                        headers: { "Content-Type": "text/plain" }
+                    }
+                );
+
+                if (response.ok)
+                    current_location = await response.body;
+                else
+                    current_content += "<p>" + await response.body + "</p>";
+            } catch (error) {
+                console.error("Error:", error);
+                current_content += "<p>An error occured while trying to execute '" + current_input + "'!</p>";
+            }
             break;
         case "vi":
             break;
