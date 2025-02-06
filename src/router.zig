@@ -1,8 +1,11 @@
 const std = @import("std");
 const zap = @import("zap");
 
+const Allocator = std.mem.Allocator;
 const Request = zap.Request;
 const Router = @This();
+
+const eql = std.mem.eql;
 
 arena: std.heap.ArenaAllocator,
 docs_dir: std.fs.Dir,
@@ -10,7 +13,7 @@ docs_dir_path: []const u8,
 static_dir: std.fs.Dir,
 static_dir_path: []const u8,
 
-pub fn init(allocator: std.mem.Allocator) !Router {
+pub fn init(allocator: Allocator) !Router {
     var arena = std.heap.ArenaAllocator.init(allocator);
     const docs_dir = try std.fs.cwd().openDir("docs", .{});
     const static_dir = try std.fs.cwd().openDir("static", .{
@@ -34,6 +37,7 @@ pub fn deinit(self: *Router) void {
 fn notFound(request: Request) void {
     std.log.debug("404 Not found: {?s}", .{request.path});
 
+    request.setStatus(.not_found);
     request.sendBody("<h1>404 Not Found</h1>\n<p>Could not find what you are looking for!</p>") catch return;
 }
 
@@ -114,14 +118,9 @@ fn serveDocs(self: *Router, request: Request) void {
     defer file_path.deinit();
 
     // Make sure that the file is real and that the path is valid
-    const real_path = self.docs_dir.realpathAlloc(allocator, file_path.str) catch |err|
+    const real_path = getRealpath(allocator, self.docs_dir, self.docs_dir_path, file_path) catch |err|
         return self.handleError(request, err);
     defer allocator.free(real_path);
-
-    if (real_path.len <= self.docs_dir_path.len)
-        return self.handleError(request, error.BadRequest);
-    if (std.mem.eql(u8, real_path[0..self.docs_dir_path.len], self.docs_dir_path))
-        return self.handleError(request, error.BadRequest);
 
     // Read in file contents, max size 1 MiB
     const file_contents = self.docs_dir.readFileAlloc(
@@ -144,6 +143,81 @@ fn serveDocs(self: *Router, request: Request) void {
 /// All routes are known to lead to real files
 fn serveStatic(self: *const Router, request: Request) void {
     request.sendFile(request.path.?[1..]) catch |err| self.handleError(request, err);
+}
+
+fn serveLS(self: *const Router, request: Request) void {
+    const allocator = self.arena.allocator();
+
+    request.parseBody() catch |err| self.handleError(request, err);
+    request.parseQuery();
+
+    const location = request.getParamStr(allocator, "location", false) catch |err|
+        self.handleError(request, err) orelse return self.handleError(request, error.BadRequest);
+    defer location.deinit();
+
+    // Make sure that the file is real and that the path is valid
+    const real_path = getRealpath(allocator, self.docs_dir, self.docs_dir_path, location.str) catch |err|
+        return self.handleError(request, err);
+    defer allocator.free(real_path);
+
+    const dir = self.docs_dir.openDir(real_path, .{ .iterate = true }) catch |err|
+        self.handleError(request, err);
+    defer dir.close();
+
+    var sub_paths = std.ArrayList([]const u8).init(allocator);
+    defer sub_paths.deinit();
+
+    const iterator = dir.iterate();
+    while (iterator.next() catch |err| self.handleError(request, err)) |next| {
+        switch (next.kind) {
+            .directory => sub_paths.append(next.name) catch |err| self.handleError(request, err),
+            .file => {
+                // Check if there a different name for the file
+                const file_name = getFileName(allocator, dir, next.name) catch |err|
+                    self.handleError(request, err);
+                defer allocator.free(file_name);
+
+                sub_paths.append(file_name) catch |err| self.handleError(request, err);
+            },
+            else => {},
+        }
+    }
+}
+
+fn getRealpath(allocator: Allocator, dir: std.fs.Dir, dir_path: []const u8, path: []const u8) ![]const u8 {
+    const real_path = dir.realpathAlloc(allocator, path.str) catch |err|
+        return err;
+    errdefer allocator.free(real_path);
+
+    if (real_path.len <= dir_path.len)
+        return error.BadRequest;
+    if (std.mem.eql(u8, real_path[0..dir_path.len], dir_path))
+        return error.BadRequest;
+
+    return real_path;
+}
+
+fn getFileName(allocator: Allocator, dir: std.fs.Dir, file: []const u8) ![]const u8 {
+    const file_contents = try dir.readFileAlloc(
+        allocator,
+        file,
+        1024 * 1024,
+    );
+    defer allocator.free(file_contents);
+
+    var offset: usize = 0;
+    if (eql(u8, file_contents[0..3], "---"))
+        // Add 8 to account for the first and last "---\n"
+        offset += 8 + std.mem.indexOf(u8, file_contents[3..], "---") orelse
+            return error.ParseError;
+
+    if (eql(u8, file_contents[offset..][0..2], "# ")) {
+        const contents = file_contents[offset + 2 ..];
+        const end_of_line = std.mem.indexOfScalar(u8, contents, '\n') orelse contents.len;
+        return allocator.dupe(u8, contents[0..end_of_line]);
+    } else {
+        return allocator.dupe(u8, file);
+    }
 }
 
 fn handleError(self: *const Router, request: Request, err: anyerror) void {

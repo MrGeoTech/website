@@ -76,8 +76,8 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function updateContent() {
-    const html_content = current_content;
-    content.innerHTML = "<p>" + html_content + "</p>"
+    console.log("update");
+    content.innerHTML = "<p>" + current_content + "</p>"
     showCursor();
     terminal.scrollTop = terminal.scrollHeight;
 }
@@ -95,12 +95,16 @@ document.addEventListener("keydown", (event) => {
     } else if (event.key == "Backspace") {
         current_input = current_input.slice(0, -1);
     } else if (event.key == "Enter") {
-        processCommand();
+        if (processCommand()) return;
     }
     //updateSuggestion();
     updateContent();
 });
 
+/**
+ * Proccesses the current input and updates the state
+ * @returns {boolean} Returns true if this function using async and therefore will call updateContent()
+ */
 function processCommand() {
     // Add current command to content
     current_content += "<p>" + current_path + " $ " + current_input + "</p>";
@@ -108,6 +112,8 @@ function processCommand() {
     // Execute command
     const split = current_input.trim().match(/\b\w+\b/g);
     if (split.length < 1) return;
+
+    const location = (split.length < 2) ? "." : split[1];
 
     switch (split[0]) {
         case "help":
@@ -118,6 +124,8 @@ function processCommand() {
                     current_content += "<p>" + help_page_help + "</p>";
                 else if (split[1] == "cd")
                     current_content += "<p>" + help_page_cd + "</p>";
+                else if (split[1] == "fetch")
+                    current_content += "<p>" + help_page_fetch + "</p>";
                 else if (split[1] == "ls")
                     current_content += "<p>" + help_page_ls + "</p>";
                 else if (split[1] == "vi")
@@ -135,49 +143,53 @@ function processCommand() {
             current_content += "<p>" + fetch_str + "</p>";
             break;
         case "cd":
-            if (split.length < 2) break;
+            if (split.length < 2) {
+                current_content += "<p>" + help_page_cd + "</p>";
+                break;
+            }
 
-            try {
-                const response = await fetch(
-                    "/cd?path=" + encodeURIComponent(current_location + current_input), 
-                    {
-                        method: "GET",
-                        headers: { "Content-Type": "text/plain" }
-                    }
-                );
-
-                if (response.ok)
-                    current_location = await response.body;
-                else
-                    current_content += "<p>" + await response.body + "</p>";
-            } catch (error) {
+            fetch(
+                "/cd?path=" + encodeURIComponent(
+                    (location.startsWith("/")) ? location : current_path + location
+                ),
+                {
+                    method: "GET",
+                    headers: { "Content-Type": "text/plain" }
+                }
+            ).then((response) => {
+                console.log("Response " + response.ok);
+                response.text().then(text => {
+                    console.log("text " + text);
+                    if (response.ok)
+                        current_location = text;
+                    else
+                        current_content += "<p>" + text + "</p>";
+                    console.log(current_content);
+                    updateContent();
+                });
+            }).catch((error) => {
                 console.error("Error:", error);
                 current_content += "<p>An error occured while trying to execute '" + current_input + "'!</p>";
-            }
+            });
             break;
         case "ls":
-            const location = (split.length < 2) ? "." else split[1];
-
-            try {
-                const response = await fetch(
-                    "/ls?path=" + 
-                        encodeURIComponent(current_location) + 
-                        "&location=" + 
-                        encodeURIComponent(location), 
-                    {
-                        method: "GET",
-                        headers: { "Content-Type": "text/plain" }
-                    }
-                );
-
-                if (response.ok)
-                    current_location = await response.body;
-                else
-                    current_content += "<p>" + await response.body + "</p>";
-            } catch (error) {
+            fetch(
+                "/ls?path=" + 
+                    encodeURIComponent(current_path) + 
+                    "&location=" + 
+                    encodeURIComponent(location),
+                {
+                    method: "GET",
+                    headers: { "Content-Type": "text/plain" }
+                }
+            ).then((response) => {
+                current_content += "<p>" + response.text + "</p>";
+            }).finally(() => {
+                updateContent();
+            }).catch((error) => {
                 console.error("Error:", error);
                 current_content += "<p>An error occured while trying to execute '" + current_input + "'!</p>";
-            }
+            });
             break;
         case "vi":
             break;
@@ -186,6 +198,7 @@ function processCommand() {
     }
     
     current_input = "";
+    return false;
 }
 
 const help_page = `
