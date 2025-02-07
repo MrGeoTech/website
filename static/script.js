@@ -76,7 +76,6 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function updateContent() {
-    console.log("update");
     content.innerHTML = "<p>" + current_content + "</p>"
     showCursor();
     terminal.scrollTop = terminal.scrollHeight;
@@ -157,14 +156,11 @@ function processCommand() {
                     headers: { "Content-Type": "text/plain" }
                 }
             ).then((response) => {
-                console.log("Response " + response.ok);
                 response.text().then(text => {
-                    console.log("text " + text);
                     if (response.ok)
                         current_location = text;
                     else
                         current_content += "<p>" + text + "</p>";
-                    console.log(current_content);
                     updateContent();
                 });
             }).catch((error) => {
@@ -174,18 +170,20 @@ function processCommand() {
             break;
         case "ls":
             fetch(
-                "/ls?path=" + 
-                    encodeURIComponent(current_path) + 
-                    "&location=" + 
-                    encodeURIComponent(location),
+                "/ls", 
                 {
-                    method: "GET",
-                    headers: { "Content-Type": "text/plain" }
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        location: current_path.substring(1) + location,
+                    })
                 }
+
             ).then((response) => {
-                current_content += "<p>" + response.text + "</p>";
-            }).finally(() => {
-                updateContent();
+                response.json().then(json => {
+                    current_content += "<p>" + json.output + "</p>";
+                    updateContent();
+                });
             }).catch((error) => {
                 console.error("Error:", error);
                 current_content += "<p>An error occured while trying to execute '" + current_input + "'!</p>";

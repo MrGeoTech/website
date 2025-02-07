@@ -49,6 +49,7 @@ pub fn getRouter(self: *Router) !zap.Router {
     try router.handle_func("/", self, &serveIndex);
     try router.handle_func("/docs", self, &serveDocs);
     try router.handle_func("/docs/", self, &serveDocs);
+    try router.handle_func("/ls", self, &serveLS);
 
     var current_path_array: [1024]u8 = undefined;
     const current_path: []u8 = current_path_array[0..0];
@@ -101,8 +102,6 @@ fn addStaticDir(self: *Router, router: *zap.Router, directory: std.fs.Dir, path:
 
 fn serveIndex(self: *const Router, request: Request) void {
     _ = self;
-    std.log.debug("Serving index", .{});
-
     request.sendFile("static/base.html") catch return;
 }
 
@@ -118,7 +117,7 @@ fn serveDocs(self: *Router, request: Request) void {
     defer file_path.deinit();
 
     // Make sure that the file is real and that the path is valid
-    const real_path = getRealpath(allocator, self.docs_dir, self.docs_dir_path, file_path) catch |err|
+    const real_path = getRealpath(allocator, self.docs_dir, self.docs_dir_path, file_path.str) catch |err|
         return self.handleError(request, err);
     defer allocator.free(real_path);
 
@@ -141,51 +140,70 @@ fn serveDocs(self: *Router, request: Request) void {
 }
 
 /// All routes are known to lead to real files
-fn serveStatic(self: *const Router, request: Request) void {
+fn serveStatic(self: *Router, request: Request) void {
     request.sendFile(request.path.?[1..]) catch |err| self.handleError(request, err);
 }
 
-fn serveLS(self: *const Router, request: Request) void {
+fn serveLS(self: *Router, request: Request) void {
     const allocator = self.arena.allocator();
 
-    request.parseBody() catch |err| self.handleError(request, err);
+    request.parseBody() catch {};
     request.parseQuery();
 
-    const location = request.getParamStr(allocator, "location", false) catch |err|
-        self.handleError(request, err) orelse return self.handleError(request, error.BadRequest);
-    defer location.deinit();
+    const location = request.getParamSlice("location") orelse
+        return self.handleError(request, error.BadRequest);
 
     // Make sure that the file is real and that the path is valid
-    const real_path = getRealpath(allocator, self.docs_dir, self.docs_dir_path, location.str) catch |err|
+    const real_path = getRealpath(allocator, self.docs_dir, self.docs_dir_path, location) catch |err|
         return self.handleError(request, err);
     defer allocator.free(real_path);
 
-    const dir = self.docs_dir.openDir(real_path, .{ .iterate = true }) catch |err|
-        self.handleError(request, err);
+    var dir = self.docs_dir.openDir(real_path, .{ .iterate = true }) catch |err|
+        return self.handleError(request, err);
     defer dir.close();
 
     var sub_paths = std.ArrayList([]const u8).init(allocator);
     defer sub_paths.deinit();
 
-    const iterator = dir.iterate();
-    while (iterator.next() catch |err| self.handleError(request, err)) |next| {
+    var iterator = dir.iterate();
+    while (iterator.next() catch |err| return self.handleError(request, err)) |next| {
         switch (next.kind) {
-            .directory => sub_paths.append(next.name) catch |err| self.handleError(request, err),
+            .directory => sub_paths.append(next.name) catch |err| return self.handleError(request, err),
             .file => {
                 // Check if there a different name for the file
                 const file_name = getFileName(allocator, dir, next.name) catch |err|
-                    self.handleError(request, err);
+                    return self.handleError(request, err);
                 defer allocator.free(file_name);
 
-                sub_paths.append(file_name) catch |err| self.handleError(request, err);
+                sub_paths.append(file_name) catch |err| return self.handleError(request, err);
             },
             else => {},
         }
     }
+
+    var length: usize = 0;
+    for (sub_paths.items) |item| {
+        length += item.len + 1;
+    }
+
+    var offset: usize = 0;
+    var response = allocator.alloc(u8, length) catch |err| return self.handleError(request, err);
+    for (sub_paths.items) |item| {
+        @memcpy(response[offset .. offset + item.len], item);
+        offset += item.len;
+        response[offset] = '\n';
+        offset += 1;
+    }
+
+    request.setStatus(.ok);
+    request.setContentType(.HTML) catch |err|
+        return self.handleError(request, err);
+    request.sendBody(response) catch |err|
+        return self.handleError(request, err);
 }
 
 fn getRealpath(allocator: Allocator, dir: std.fs.Dir, dir_path: []const u8, path: []const u8) ![]const u8 {
-    const real_path = dir.realpathAlloc(allocator, path.str) catch |err|
+    const real_path = dir.realpathAlloc(allocator, path) catch |err|
         return err;
     errdefer allocator.free(real_path);
 
@@ -208,8 +226,8 @@ fn getFileName(allocator: Allocator, dir: std.fs.Dir, file: []const u8) ![]const
     var offset: usize = 0;
     if (eql(u8, file_contents[0..3], "---"))
         // Add 8 to account for the first and last "---\n"
-        offset += 8 + std.mem.indexOf(u8, file_contents[3..], "---") orelse
-            return error.ParseError;
+        offset += 8 + (std.mem.indexOf(u8, file_contents[3..], "---") orelse
+            return error.ParseError);
 
     if (eql(u8, file_contents[offset..][0..2], "# ")) {
         const contents = file_contents[offset + 2 ..];
@@ -220,10 +238,10 @@ fn getFileName(allocator: Allocator, dir: std.fs.Dir, file: []const u8) ![]const
     }
 }
 
-fn handleError(self: *const Router, request: Request, err: anyerror) void {
-    _ = self;
+fn handleError(self: *Router, request: Request, err: anyerror) void {
     // Attempt to log stack trace incase it is needed to figure out errors
     std.log.warn("An error occured while trying to process a request: {!}", .{err});
+    logStackTrace(self.arena.allocator());
     // Reponse with an error code and explination
     switch (err) {
         error.BadRequest => {
@@ -263,4 +281,16 @@ fn handleError(self: *const Router, request: Request, err: anyerror) void {
             request.sendBody(body) catch return;
         },
     }
+}
+
+fn logStackTrace(allocator: Allocator) void {
+    var debug_info = std.debug.DebugInfo{
+        .allocator = allocator,
+        .address_map = std.AutoHashMap(usize, *std.debug.ModuleDebugInfo).init(allocator),
+        .modules = {},
+    };
+    defer debug_info.deinit();
+
+    const std_err = std.io.getStdErr();
+    std.debug.writeCurrentStackTrace(std_err.writer(), &debug_info, std.io.tty.detectConfig(std_err), null) catch return;
 }
