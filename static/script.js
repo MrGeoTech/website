@@ -23,6 +23,7 @@ Hint: Type "help" for all commands
 `.replace("\n", "<br/>");
 var current_input = "";
 var current_path = "/";
+var current_suggestion = "";
 
 document.addEventListener("DOMContentLoaded", () => {
     const logLines = [
@@ -82,8 +83,12 @@ function updateContent() {
 }
 
 function showCursor() {
+    const split = current_input.split(" ").filter(s => s.trim() !== "");
+    
+    const extra = split.slice(1).join(" ");
+
     const html = `
-        <p>${current_path} $ ${current_input}<span id="cursor"></span></p>
+        <p>${current_path} $ ${current_input}<span id="cursor"></span><span id="suggestion">${current_suggestion.slice(extra.length)}</span></p>
     `;
     content.innerHTML += html;
 }
@@ -94,9 +99,13 @@ document.addEventListener("keydown", (event) => {
     } else if (event.key == "Backspace") {
         current_input = current_input.slice(0, -1);
     } else if (event.key == "Enter") {
-        if (processCommand()) return;
+        processCommand();
+    } else if (event.key == "Tab") {
+        event.preventDefault();
+        const split = current_input.split(" ").filter(s => s.trim() !== "");
+        current_input = split[0] + " " + current_suggestion;
     }
-    //updateSuggestion();
+    updateSuggestion();
     updateContent();
 });
 
@@ -109,29 +118,32 @@ function processCommand() {
     current_content += "<p>" + current_path + " $ " + current_input + "</p>";
 
     // Execute command
-    const split = current_input.trim().match(/\b\w+\b/g);
+    const split = current_input.split(" ").filter(s => s.trim() !== "");
     if (split.length < 1) return;
+    
+    const command = split[0];
+    const extra = split.slice(1).join(" ");
 
-    const location = (split.length < 2) ? "." : split[1];
+    const location = (split.length < 2) ? "." : extra;
 
-    switch (split[0]) {
+    switch (command) {
         case "help":
             if (split.length == 1) {
                 current_content += "<p>" + help_page + "</p>";
             } else {
-                if (split[1] == "help")
+                if (extra == "help")
                     current_content += "<p>" + help_page_help + "</p>";
-                else if (split[1] == "cd")
+                else if (extra == "cd")
                     current_content += "<p>" + help_page_cd + "</p>";
-                else if (split[1] == "fetch")
+                else if (extra == "fetch")
                     current_content += "<p>" + help_page_fetch + "</p>";
-                else if (split[1] == "ls")
+                else if (extra == "ls")
                     current_content += "<p>" + help_page_ls + "</p>";
-                else if (split[1] == "vi")
+                else if (extra == "vi")
                     current_content += "<p>" + help_page_vi + "</p>";
                 else
                     current_content += "<p>Help page for " + 
-                        split[1] + 
+                        extra + 
                         " does not exist! Try either \"help\", \"cd\", \"ls\", or \"vi\".</p>";
             }
             break;
@@ -148,17 +160,19 @@ function processCommand() {
             }
 
             fetch(
-                "/cd?path=" + encodeURIComponent(
-                    (location.startsWith("/")) ? location : current_path + location
-                ),
+                "/cd",
                 {
-                    method: "GET",
-                    headers: { "Content-Type": "text/plain" }
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain" },
+                    body: JSON.stringify({
+                        location: (location.startsWith("/")) ? location : current_path + location
+                    })
                 }
             ).then((response) => {
                 response.text().then(text => {
+                    console.log(text);
                     if (response.ok)
-                        current_location = text;
+                        current_path = text;
                     else
                         current_content += "<p>" + text + "</p>";
                     updateContent();
@@ -166,27 +180,29 @@ function processCommand() {
             }).catch((error) => {
                 console.error("Error:", error);
                 current_content += "<p>An error occured while trying to execute '" + current_input + "'!</p>";
+                updateContent();
             });
             break;
         case "ls":
             fetch(
-                "/ls", 
+                "/ls",
                 {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { "Content-Type": "text/plain" },
                     body: JSON.stringify({
-                        location: current_path.substring(1) + location,
+                        location: (current_path == "/") ? "./" + location : current_path + "/" + location,
                     })
                 }
 
             ).then((response) => {
-                response.json().then(json => {
-                    current_content += "<p>" + json.output + "</p>";
+                response.text().then(text => {
+                    current_content += "<p>" + text + "</p>";
                     updateContent();
                 });
             }).catch((error) => {
                 console.error("Error:", error);
                 current_content += "<p>An error occured while trying to execute '" + current_input + "'!</p>";
+                updateContent();
             });
             break;
         case "vi":
@@ -196,7 +212,70 @@ function processCommand() {
     }
     
     current_input = "";
-    return false;
+    current_suggestion = "";
+}
+
+function updateSuggestion() {
+    const split = current_input.split(" ").filter(s => s.trim() !== "");
+    if (split.length < 2) return;
+    
+    const extra = split.slice(1).join(" ");
+    const path = extra.substring(0, extra.lastIndexOf("/"));
+
+    console.log(extra);
+    console.log(path);
+
+    fetch(
+        "/ls",
+        {
+            method: "POST",
+            headers: { "Content-Type": "text/plain" },
+            body: JSON.stringify({
+                location: ((current_path == "/") ? "." : current_path) + "/" + path,
+            })
+        }
+
+    ).then((response) => {
+        response.text().then(text => {
+            const suggestions = text.split("\n").filter(s => s.trim() !== "");
+            const bestMatch = findBestMatch(extra, suggestions);
+
+            current_suggestion = ((path != "") ? (path + "/") : "") + bestMatch;
+            updateContent();
+        });
+    }).catch((error) => {
+        console.error("Silent Error:", error);
+    });
+
+}
+
+function findBestMatch(input, suggestions) {
+    input = input.toLowerCase();
+    
+    // Prioritize exact prefix matches
+    const prefixMatches = suggestions.filter(s => s.toLowerCase().startsWith(input));
+    if (prefixMatches.length > 0) return prefixMatches[0]; // Best match is the first prefix match
+
+    // If no prefix match, look for closest string using Levenshtein distance (fuzzy search)
+    return suggestions.reduce((best, current) => {
+        return levenshteinDistance(input, current) < levenshteinDistance(input, best) ? current : best;
+    }, suggestions[0]);
+}
+
+// Basic Levenshtein distance implementation (used for fuzzy matching)
+function levenshteinDistance(a, b) {
+    const dp = Array(a.length + 1).fill(null).map(() => Array(b.length + 1).fill(null));
+
+    for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+    for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+
+    for (let i = 1; i <= a.length; i++) {
+        for (let j = 1; j <= b.length; j++) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+        }
+    }
+    return dp[a.length][b.length];
 }
 
 const help_page = `

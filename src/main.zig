@@ -22,6 +22,7 @@ pub fn main() !void {
     defer router_zap.deinit();
 
     std.log.info("Starting server", .{});
+    defer std.log.info("Stopping server", .{});
 
     var listener = zap.HttpListener.init(.{
         .port = if (builtin.mode == .Debug) 8080 else 82,

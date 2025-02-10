@@ -1,5 +1,6 @@
 :root {
     --text: #49a732;
+    --text-rgb: 73, 167, 50;
     --background: #1c4811;
     --selection-background: #474b52;
     --selection-foreground: #cfd2d0;
@@ -99,12 +100,17 @@ up {
 
 #cursor {
     animation: cursor_blink 1s steps(1, start) infinite;
+    border-right: rgba(0, 0, 0, 0) 2px solid;
 }
 
 @keyframes cursor_blink {
     50% {
         border-right: var(--text) 2px solid;
     }
+}
+
+#suggestion {
+    color: rgba(var(--text-rgb), 0.5);
 }
 
 p {
