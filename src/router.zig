@@ -67,8 +67,7 @@ pub fn getRouter(self: *Router) !zap.Router {
 
     try router.handle_func("/", self, &serveIndex);
     try router.handle_func("/favicon.ico", self, &serveFavicon);
-    try router.handle_func("/docs", self, &serveDocs);
-    try router.handle_func("/docs/", self, &serveDocs);
+    try router.handle_func("/vi", self, &serveVI);
     try router.handle_func("/ls", self, &serveLS);
     try router.handle_func("/cd", self, &serveCD);
 
@@ -131,7 +130,7 @@ fn serveFavicon(self: *const Router, request: Request) void {
     request.sendFile("static/favicon.ico") catch return;
 }
 
-fn serveDocs(self: *Router, request: Request) void {
+fn serveVI(self: *Router, request: Request) void {
     request.parseBody() catch |err| self.handleError(request, err);
     request.parseQuery();
 
@@ -140,15 +139,46 @@ fn serveDocs(self: *Router, request: Request) void {
         return self.handleError(request, error.BadRequest);
     defer file_path.deinit();
 
+    const dir_path = file_path.str[0 .. std.mem.lastIndexOfScalar(u8, file_path.std, '/') orelse 0];
+    std.log.debug("File: {s} : Dir: {s}", .{ file_path.str, dir_path });
+
     // Make sure that the file is real and that the path is valid
-    const real_path = getRealpath(self.allocator, self.docs_dir, self.docs_dir_path, file_path.str) catch |err|
+    const dir_real_path = getRealpath(self.allocator, self.docs_dir, self.docs_dir_path, dir_path) catch |err|
         return self.handleError(request, err);
-    defer self.allocator.free(real_path);
+    defer self.allocator.free(dir_real_path);
+
+    var dir = self.docs_dir.openDir(dir_real_path, .{ .iterate = true }) catch |err|
+        return self.handleError(request, err);
+    defer dir.close();
+
+    var file_name: []const u8 = "";
+
+    var iterator = dir.iterate();
+    while (iterator.next() catch |err| return self.handleError(request, err)) |file| {
+        if (file.kind != .file) continue;
+        const display_name = getFileName(self.allocator, dir, file.name) catch |err|
+            return self.handleError(request, err);
+        defer self.allocator.free(display_name);
+        if (eql(u8, display_name, file_path[dir_path.len + 1 ..])) {
+            file_name = self.allocator.dupe(u8, file.name) catch |err|
+                return self.handleError(request, err);
+        }
+    }
+    defer self.allocator.free(file_name);
+
+    const file_real_path = self.allocator.alloc(
+        u8,
+        dir_real_path.len + 1 + file_name.len,
+    ) catch |err|
+        return self.handleError(request, err);
+    @memcpy(file_real_path[0..dir_real_path.len], dir_real_path);
+    file_real_path[dir_real_path.len] = '/';
+    @memcpy(file_real_path[dir_real_path.len + 1 ..], file_name);
 
     // Read in file contents, max size 1 MiB
     const file_contents = self.docs_dir.readFileAlloc(
         self.allocator,
-        real_path,
+        file_real_path,
         1024 * 1024,
     ) catch |err| return self.handleError(request, err);
     defer self.allocator.free(file_contents);
@@ -169,6 +199,7 @@ fn serveStatic(self: *Router, request: Request) void {
 }
 
 fn serveLS(self: *Router, request: Request) void {
+    // TODO: Better error handling
     var arena = std.heap.ArenaAllocator.init(self.allocator);
     defer arena.deinit();
 
@@ -183,8 +214,7 @@ fn serveLS(self: *Router, request: Request) void {
     defer json.deinit();
 
     if (json.value.location.len < 1) return self.handleError(request, error.BadRequest);
-    const location = json.value.location;
-    std.log.debug("Location {s}", .{location});
+    const location = if (json.value.location[0] == '/') json.value.location[1..] else json.value.location;
 
     // Make sure that the file is real and that the path is valid
     const real_path = getRealpath(allocator, self.docs_dir, self.docs_dir_path, location) catch |err|
@@ -203,12 +233,10 @@ fn serveLS(self: *Router, request: Request) void {
         switch (next.kind) {
             .directory => {
                 if (eql(u8, next.name, ".git")) continue;
-                std.log.debug("Dir  {s}", .{next.name});
                 sub_paths.append(next.name) catch |err| return self.handleError(request, err);
             },
             .file => {
-                std.log.debug("File {s}", .{next.name});
-                if (!eql(u8, next.name[next.name.len - 4 ..], ".md")) continue;
+                if (!eql(u8, next.name[next.name.len - 3 ..], ".md")) continue;
 
                 // Check if there a different name for the file
                 const file_name = getFileName(allocator, dir, next.name) catch |err|
@@ -244,6 +272,7 @@ fn serveLS(self: *Router, request: Request) void {
 }
 
 fn serveCD(self: *Router, request: Request) void {
+    // TODO: Better error handling
     request.parseBody() catch {};
     request.parseQuery();
 
@@ -253,10 +282,9 @@ fn serveCD(self: *Router, request: Request) void {
     defer json.deinit();
 
     if (json.value.location.len < 1) return self.handleError(request, error.BadRequest);
-    const location = json.value.location[1..]; // Skip first byte, which will be a '/'
-    std.log.debug("Location {s} {s}", .{ json.value.location, location });
+    const location = json.value.location;
 
-    // Make sure that the file is real and that the path is valid
+    // Make sure the directory is valid (exists and is in a valid location)
     const real_path = getRealpath(self.allocator, self.docs_dir, self.docs_dir_path, location) catch |err|
         return self.handleError(request, err);
     defer self.allocator.free(real_path);
@@ -292,13 +320,20 @@ fn getFileName(allocator: Allocator, dir: std.fs.Dir, file: []const u8) ![]const
     var offset: usize = 0;
     if (eql(u8, file_contents[0..3], "---"))
         // Add 8 to account for the first and last "---\n"
-        offset += 8 + (std.mem.indexOf(u8, file_contents[3..], "---") orelse
+        offset += 7 + (std.mem.indexOf(u8, file_contents[3..], "---") orelse
             return error.ParseError);
 
     if (eql(u8, file_contents[offset..][0..2], "# ")) {
         const contents = file_contents[offset + 2 ..];
         const end_of_line = std.mem.indexOfScalar(u8, contents, '\n') orelse contents.len;
-        return allocator.dupe(u8, contents[0..end_of_line]);
+
+        const result = try allocator.alloc(u8, end_of_line + 3);
+        errdefer allocator.free(result);
+
+        @memcpy(result[0..end_of_line], contents[0..end_of_line]);
+        @memcpy(result[end_of_line..], ".md");
+
+        return result;
     } else {
         return allocator.dupe(u8, file);
     }

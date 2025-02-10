@@ -165,7 +165,11 @@ function processCommand() {
                     method: "POST",
                     headers: { "Content-Type": "text/plain" },
                     body: JSON.stringify({
-                        location: (location.startsWith("/")) ? location : current_path + location
+                        location: (location.startsWith("/")) ? 
+                            location : 
+                            (current_path == "/") ? 
+                                ("./" + location) : 
+                                (current_path + "/" + location)
                     })
                 }
             ).then((response) => {
@@ -190,7 +194,7 @@ function processCommand() {
                     method: "POST",
                     headers: { "Content-Type": "text/plain" },
                     body: JSON.stringify({
-                        location: (current_path == "/") ? "./" + location : current_path + "/" + location,
+                        location: (current_path == "/") ? ("./" + location) : (current_path + "/" + location),
                     })
                 }
 
