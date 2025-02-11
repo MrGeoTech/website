@@ -120,6 +120,11 @@ fn addStaticDir(self: *Router, router: *zap.Router, directory: std.fs.Dir, path:
     }
 }
 
+/// All routes are known to lead to real files
+fn serveStatic(self: *Router, request: Request) void {
+    request.sendFile(request.path.?[1..]) catch |err| self.handleError(request, err);
+}
+
 fn serveIndex(self: *const Router, request: Request) void {
     _ = self;
     request.sendFile("static/base.html") catch return;
@@ -131,16 +136,18 @@ fn serveFavicon(self: *const Router, request: Request) void {
 }
 
 fn serveVI(self: *Router, request: Request) void {
-    request.parseBody() catch |err| self.handleError(request, err);
+    request.parseBody() catch |err| return self.handleError(request, err);
     request.parseQuery();
 
-    const file_path = (request.getParamStr(self.allocator, "path", false) catch |err|
-        return self.handleError(request, err)) orelse
-        return self.handleError(request, error.BadRequest);
-    defer file_path.deinit();
+    const LocationType = struct { location: []const u8 };
+    const json = std.json.parseFromSlice(LocationType, self.allocator, request.body.?, .{}) catch |err|
+        return self.handleError(request, err);
+    defer json.deinit();
+    const location = json.value.location[if (json.value.location[0] == '/') 1 else 0..];
 
-    const dir_path = file_path.str[0 .. std.mem.lastIndexOfScalar(u8, file_path.std, '/') orelse 0];
-    std.log.debug("File: {s} : Dir: {s}", .{ file_path.str, dir_path });
+    const dir_path_end = std.mem.lastIndexOfScalar(u8, location, '/') orelse 0;
+    const dir_path = location[0..dir_path_end];
+    std.log.debug("Dir: {s}", .{dir_path});
 
     // Make sure that the file is real and that the path is valid
     const dir_real_path = getRealpath(self.allocator, self.docs_dir, self.docs_dir_path, dir_path) catch |err|
@@ -159,9 +166,12 @@ fn serveVI(self: *Router, request: Request) void {
         const display_name = getFileName(self.allocator, dir, file.name) catch |err|
             return self.handleError(request, err);
         defer self.allocator.free(display_name);
-        if (eql(u8, display_name, file_path[dir_path.len + 1 ..])) {
+
+        std.log.debug("Display name: {s}\nFile name: {s}", .{ display_name, location[dir_path.len + 1 ..] });
+        if (eql(u8, display_name, location[dir_path.len + 1 ..])) {
             file_name = self.allocator.dupe(u8, file.name) catch |err|
                 return self.handleError(request, err);
+            break;
         }
     }
     defer self.allocator.free(file_name);
@@ -171,9 +181,12 @@ fn serveVI(self: *Router, request: Request) void {
         dir_real_path.len + 1 + file_name.len,
     ) catch |err|
         return self.handleError(request, err);
+    defer self.allocator.free(file_real_path);
     @memcpy(file_real_path[0..dir_real_path.len], dir_real_path);
     file_real_path[dir_real_path.len] = '/';
     @memcpy(file_real_path[dir_real_path.len + 1 ..], file_name);
+
+    std.log.debug("{s}", .{file_real_path});
 
     // Read in file contents, max size 1 MiB
     const file_contents = self.docs_dir.readFileAlloc(
@@ -193,9 +206,33 @@ fn serveVI(self: *Router, request: Request) void {
         return self.handleError(request, err);
 }
 
-/// All routes are known to lead to real files
-fn serveStatic(self: *Router, request: Request) void {
-    request.sendFile(request.path.?[1..]) catch |err| self.handleError(request, err);
+fn parseMarkdown(arena: *std.heap.ArenaAllocator, markdown: []const u8) []const u8 {
+    const allocator = arena.allocator();
+
+    var html_slices = std.ArrayList([]const u8).init(allocator);
+    defer html_slices.deinit();
+
+    const ParserState = struct {
+        current_state: enum(u8) {
+            italic,
+            bold,
+            underline,
+            strikethrough,
+        },
+        /// The previous character
+        prev_char: u8 = '\n',
+        /// How many of the previous character are in a line
+        prev_count: u8 = 0,
+    };
+
+    var state = ParserState{};
+    for (markdown) |char| {
+        if (state.prev_char == char)
+            state.prev_count += 1
+        else
+            state.prev_count = 1;
+        state.prev_char = char;
+    }
 }
 
 fn serveLS(self: *Router, request: Request) void {

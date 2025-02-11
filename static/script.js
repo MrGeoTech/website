@@ -94,6 +94,7 @@ function showCursor() {
 }
 
 document.addEventListener("keydown", (event) => {
+    event.preventDefault();
     if (event.key.length == 1) {
         current_input += event.key;
     } else if (event.key == "Backspace") {
@@ -101,7 +102,6 @@ document.addEventListener("keydown", (event) => {
     } else if (event.key == "Enter") {
         processCommand();
     } else if (event.key == "Tab") {
-        event.preventDefault();
         const split = current_input.split(" ").filter(s => s.trim() !== "");
         current_input = split[0] + " " + current_suggestion;
     }
@@ -163,7 +163,7 @@ function processCommand() {
                 "/cd",
                 {
                     method: "POST",
-                    headers: { "Content-Type": "text/plain" },
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         location: (location.startsWith("/")) ? 
                             location : 
@@ -183,7 +183,7 @@ function processCommand() {
                 });
             }).catch((error) => {
                 console.error("Error:", error);
-                current_content += "<p>An error occured while trying to execute '" + current_input + "'!</p>";
+                current_content += "<p>An error occured while trying to execute '" + split.join(" ") + "'!</p>";
                 updateContent();
             });
             break;
@@ -192,9 +192,13 @@ function processCommand() {
                 "/ls",
                 {
                     method: "POST",
-                    headers: { "Content-Type": "text/plain" },
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        location: (current_path == "/") ? ("./" + location) : (current_path + "/" + location),
+                        location: (location.startsWith("/")) ? 
+                            location : 
+                            (current_path == "/") ? 
+                                ("./" + location) : 
+                                (current_path + "/" + location),
                     })
                 }
 
@@ -205,11 +209,35 @@ function processCommand() {
                 });
             }).catch((error) => {
                 console.error("Error:", error);
-                current_content += "<p>An error occured while trying to execute '" + current_input + "'!</p>";
+                current_content += "<p>An error occured while trying to execute '" + split.join(" ") + "'!</p>";
                 updateContent();
             });
             break;
         case "vi":
+            fetch(
+                "/vi",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        location: (location.startsWith("/")) ? 
+                            location : 
+                            (current_path == "/") ? 
+                                ("./" + location) : 
+                                (current_path + "/" + location),
+                    })
+                }
+
+            ).then((response) => {
+                response.text().then(text => {
+                    current_content += "<p>" + text + "</p>";
+                    updateContent();
+                });
+            }).catch((error) => {
+                console.error("Error:", error);
+                current_content += "<p>An error occured while trying to execute '" + split.join(" ") + "'!</p>";
+                updateContent();
+            });
             break;
         default:
             current_content += "<p>" + current_input + ": command not found</p>";
