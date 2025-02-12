@@ -182,6 +182,7 @@ fn serveVI(self: *Router, request: Request) void {
     ) catch |err|
         return self.handleError(request, err);
     defer self.allocator.free(file_real_path);
+
     @memcpy(file_real_path[0..dir_real_path.len], dir_real_path);
     file_real_path[dir_real_path.len] = '/';
     @memcpy(file_real_path[dir_real_path.len + 1 ..], file_name);
@@ -196,43 +197,18 @@ fn serveVI(self: *Router, request: Request) void {
     ) catch |err| return self.handleError(request, err);
     defer self.allocator.free(file_contents);
 
-    // TODO: Convert to HTML
+    var markdown_arena = std.heap.ArenaAllocator.init(self.allocator);
+    defer markdown_arena.deinit();
+
+    const markdown = @import("parser.zig").parseMarkdown(&markdown_arena, file_contents) catch |err|
+        return self.handleError(request, err);
 
     // Response with result
     request.setStatus(.ok);
     request.setContentType(.HTML) catch |err|
         return self.handleError(request, err);
-    request.sendBody(file_contents) catch |err|
+    request.sendBody(markdown) catch |err|
         return self.handleError(request, err);
-}
-
-fn parseMarkdown(arena: *std.heap.ArenaAllocator, markdown: []const u8) []const u8 {
-    const allocator = arena.allocator();
-
-    var html_slices = std.ArrayList([]const u8).init(allocator);
-    defer html_slices.deinit();
-
-    const ParserState = struct {
-        current_state: enum(u8) {
-            italic,
-            bold,
-            underline,
-            strikethrough,
-        },
-        /// The previous character
-        prev_char: u8 = '\n',
-        /// How many of the previous character are in a line
-        prev_count: u8 = 0,
-    };
-
-    var state = ParserState{};
-    for (markdown) |char| {
-        if (state.prev_char == char)
-            state.prev_count += 1
-        else
-            state.prev_count = 1;
-        state.prev_char = char;
-    }
 }
 
 fn serveLS(self: *Router, request: Request) void {
