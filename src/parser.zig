@@ -1,94 +1,53 @@
 const std = @import("std");
 
-const ParserState = struct {
-    is_heading: bool = false,
-    is_bold: bool = false,
-    is_italic: bool = false,
-    /// The previous character
-    prev_char: u8 = '\n',
-    /// How many of the previous character are in a line
-    prev_count: u8 = 0,
+const Token = @import("token.zig");
+const TokenList = struct {
+    list: std.ArrayList(Token),
+
+    pub fn deinit(self: *TokenList) void {
+        for (self.list.items) |item| {
+            self.list.allocator.free(item.active_effects);
+        }
+        self.list.deinit();
+    }
 };
 
-pub fn parseMarkdown(arena: *std.heap.ArenaAllocator, markdown: []const u8) ![]const u8 {
-    const allocator = arena.allocator();
+pub fn tokenizeMath(tokens: *TokenList) !void {
+    const allocator = tokens.list.allocator;
 
-    var html_slices = std.ArrayList([]const u8).init(allocator);
-    defer html_slices.deinit();
+    var new_tokens = try allocator.create(TokenList);
+    errdefer allocator.destroy(new_tokens);
+    new_tokens.* = .{ .list = std.ArrayList(Token).init(allocator) };
+    errdefer new_tokens.deinit();
 
-    var last_index: usize = 0;
-    var state = ParserState{};
-    for (markdown, 0..) |char, i| {
-        // Bold/Italics
-        if (state.prev_char == '*') {
-            if (char == '*') {
-                // Handle 3+ asterisks
-                if (state.prev_count == 2) {
-                    state.is_bold = !state.is_bold;
-                    if (state.is_bold) {
-                        try html_slices.append(markdown[last_index .. i - 2]);
-                        last_index = i;
-                        try html_slices.append("<strong>");
-                    } else {
-                        try html_slices.append(markdown[last_index .. i - 2]);
-                        last_index = i;
-                        try html_slices.append("</strong>");
-                    }
-                    state.prev_count = 0;
-                }
-            } else {
-                // Handle either bold or italic
-                if (state.prev_count == 2) {
-                    state.is_bold = !state.is_bold;
-                    if (state.is_bold) {
-                        try html_slices.append(markdown[last_index .. i - 2]);
-                        last_index = i;
-                        try html_slices.append("<strong>");
-                    } else {
-                        try html_slices.append(markdown[last_index .. i - 2]);
-                        last_index = i;
-                        try html_slices.append("</strong>");
-                    }
+    for (tokens.items) |token| {
+        // Find math blocks
+        var split_iterator = std.mem.split(u8, token.contents, "$$");
+        if (split_iterator.peek() != null) {
+            var is_math_block = false;
+            while (split_iterator.next()) |item| {
+                if (is_math_block) {
+                    new_tokens.list.append(.{
+                        .contents = item,
+                        .effects = try append(Token.TextEffect, allocator, token.effects, .math),
+                    });
                 } else {
-                    state.is_italic = !state.is_italic;
-                    if (state.is_italic) {
-                        try html_slices.append(markdown[last_index .. i - 1]);
-                        last_index = i;
-                        try html_slices.append("<em>");
-                    } else {
-                        try html_slices.append(markdown[last_index .. i - 1]);
-                        last_index = i;
-                        try html_slices.append("</em>");
-                    }
+                    new_tokens.list.append(.{ .contents = item, .active_effects = try allocator.dupe(Token.TextEffect, token) });
                 }
+                is_math_block = !is_math_block;
             }
-            continue;
         }
-
-        // Handle Heading
-        if (state.prev_char == '#' and char != '#') {}
-
-        // Update previous values
-        if (state.prev_char == char)
-            state.prev_count += 1
-        else
-            state.prev_count = 1;
-        state.prev_char = char;
-    }
-    try html_slices.append(markdown[last_index..markdown.len]);
-
-    var length: usize = 0;
-    for (html_slices.items) |item| {
-        length += item.len;
+        // Find inline math
     }
 
-    const html = try allocator.alloc(u8, length);
+    // Update tokens to new tokens
+    tokens.deinit();
+    tokens.allocator.destroy(tokens);
+    tokens = new_tokens;
+}
 
-    var offset: usize = 0;
-    for (html_slices.items) |item| {
-        @memcpy(html[offset .. offset + item.len], item);
-        offset += item.len;
-    }
-
-    return html;
+fn append(comptime T: anytype, allocator: std.mem.Allocator, current: []const T, new_item: T) ![]T {
+    const new_array = allocator.realloc(current.*, current.*.len + 1);
+    new_array[current.len] = new_item;
+    return new_array;
 }
