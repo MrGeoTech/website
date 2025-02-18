@@ -200,7 +200,11 @@ fn serveVI(self: *Router, request: Request) void {
     var markdown_arena = std.heap.ArenaAllocator.init(self.allocator);
     defer markdown_arena.deinit();
 
-    const markdown = @import("parser.zig").parseMarkdown(&markdown_arena, file_contents) catch |err|
+    const tokens = @import("parser.zig").tokenize(markdown_arena.allocator(), file_contents) catch |err|
+        return self.handleError(request, err);
+    defer tokens.deinit();
+
+    const markdown = tokens.toHtml() catch |err|
         return self.handleError(request, err);
 
     // Response with result
