@@ -4,6 +4,9 @@ stdenv.mkDerivation rec {
     version = "0.2.0";
 
     # Build dependencies
-    buildInputs = with pkgs; [ zig ];
+    buildInputs = with pkgs; [ 
+        zig
+        md4c
+    ];
 }
 

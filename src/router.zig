@@ -1,5 +1,8 @@
 const std = @import("std");
 const zap = @import("zap");
+const md4c = @cImport({
+    @cInclude("md4c.h");
+});
 
 const Allocator = std.mem.Allocator;
 const Request = zap.Request;
@@ -197,21 +200,11 @@ fn serveVI(self: *Router, request: Request) void {
     ) catch |err| return self.handleError(request, err);
     defer self.allocator.free(file_contents);
 
-    var markdown_arena = std.heap.ArenaAllocator.init(self.allocator);
-    defer markdown_arena.deinit();
-
-    const tokens = @import("parser.zig").tokenize(markdown_arena.allocator(), file_contents) catch |err|
-        return self.handleError(request, err);
-    defer tokens.deinit();
-
-    const markdown = tokens.toHtml() catch |err|
-        return self.handleError(request, err);
-
     // Response with result
     request.setStatus(.ok);
     request.setContentType(.HTML) catch |err|
         return self.handleError(request, err);
-    request.sendBody(markdown) catch |err|
+    request.sendBody(file_contents) catch |err|
         return self.handleError(request, err);
 }
 
