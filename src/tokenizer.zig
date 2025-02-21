@@ -282,7 +282,15 @@ test "tokenize" {
 
 pub fn cleanTokens(tokens: *std.ArrayList(Token)) !void {
     var exclude_effects = false;
-    for (tokens.items) |token| {
-        
+
+    var new_tokens = std.ArrayList(Token).init(tokens.allocator);
+    defer new_tokens.deinit();
+
+    var i: usize = 0;
+    while (i < tokens.items.len) : (i += 1) {
+        const token = tokens.items[i];
+        switch (token.token_type) {
+            .text, .force_newline => try new_tokens.append(token),
+        }
     }
 }
