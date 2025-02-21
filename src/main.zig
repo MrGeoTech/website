@@ -37,3 +37,7 @@ pub fn main() !void {
         .workers = 1,
     });
 }
+
+test "main" {
+    std.testing.refAllDeclsRecursive(@import("tokenizer.zig"));
+}

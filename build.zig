@@ -17,7 +17,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     exe.root_module.addImport("zap", zap.module("zap"));
-    exe.linkSystemLibrary("md4c");
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);

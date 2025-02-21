@@ -200,6 +200,16 @@ fn serveVI(self: *Router, request: Request) void {
     ) catch |err| return self.handleError(request, err);
     defer self.allocator.free(file_contents);
 
+    const tokens = @import("tokenizer.zig").tokenize(self.allocator, file_contents) catch |err|
+        return self.handleError(request, err);
+    defer tokens.deinit();
+
+    var writer = std.io.getStdOut().writer();
+    for (tokens.items) |token| {
+        token.write(writer) catch |err| return self.handleError(request, err);
+        writer.writeAll("\n") catch |err| return self.handleError(request, err);
+    }
+
     // Response with result
     request.setStatus(.ok);
     request.setContentType(.HTML) catch |err|
