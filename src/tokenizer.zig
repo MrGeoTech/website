@@ -1,5 +1,9 @@
 const std = @import("std");
 
+const TokenList = std.ArrayList(Token);
+
+const eql = std.mem.eql;
+
 pub const TokenType = enum {
     text,
     newline,
@@ -25,6 +29,33 @@ pub const TokenType = enum {
             .code => "`",
             .code_block => "```",
         };
+    }
+
+    pub fn isEscapeable(self: TokenType) bool {
+        return self != .text and self != .force_newline and self != .newline;
+    }
+
+    pub fn of(text: []const u8) TokenType {
+        return if (eql(u8, text, "*"))
+            .italic
+        else if (eql(u8, text, "**"))
+            .bold
+        else if (eql(u8, text, "$"))
+            .math
+        else if (eql(u8, text, "$$"))
+            .math_block
+        else if (eql(u8, text, "`"))
+            .code
+        else if (eql(u8, text, "```"))
+            .code_block
+        else if (eql(u8, text, "\\"))
+            .escape
+        else if (eql(u8, text, "\n"))
+            .newline
+        else if (eql(u8, text, "  \n"))
+            .force_newline
+        else
+            .text;
     }
 };
 
@@ -61,7 +92,7 @@ pub const Token = struct {
 
 const TokenizerState = struct {
     markdown: []const u8,
-    tokens: std.ArrayList(Token),
+    tokens: TokenList,
     start: usize = 0,
     current: usize = 0,
     line: usize = 1,
@@ -118,7 +149,7 @@ const TokenizerState = struct {
     test "scanToken" {
         var state = TokenizerState{
             .markdown = "**test**more",
-            .tokens = std.ArrayList(Token).init(std.testing.allocator),
+            .tokens = TokenList.init(std.testing.allocator),
             .current = 0,
         };
         defer state.tokens.deinit();
@@ -183,7 +214,7 @@ const TokenizerState = struct {
     test "addToken/addText" {
         var state = TokenizerState{
             .markdown = "**test**more",
-            .tokens = std.ArrayList(Token).init(std.testing.allocator),
+            .tokens = TokenList.init(std.testing.allocator),
             .current = 1,
         };
         defer state.tokens.deinit();
@@ -231,7 +262,7 @@ const TokenizerState = struct {
     test "matches" {
         var state = TokenizerState{
             .markdown = "**test**",
-            .tokens = std.ArrayList(Token).init(std.testing.allocator),
+            .tokens = TokenList.init(std.testing.allocator),
         };
         defer state.tokens.deinit();
 
@@ -245,10 +276,10 @@ const TokenizerState = struct {
     }
 };
 
-pub fn tokenize(allocator: std.mem.Allocator, markdown: []const u8) !std.ArrayList(Token) {
+pub fn tokenize(allocator: std.mem.Allocator, markdown: []const u8) !TokenList {
     var state = TokenizerState{
         .markdown = markdown,
-        .tokens = std.ArrayList(Token).init(allocator),
+        .tokens = TokenList.init(allocator),
     };
 
     std.debug.assert(state.markdown.len > 0);
@@ -280,10 +311,8 @@ test "tokenize" {
     try std.testing.expectEqual(1, tokens.items[3].line);
 }
 
-pub fn cleanTokens(tokens: *std.ArrayList(Token)) !void {
-    var exclude_effects = false;
-
-    var new_tokens = std.ArrayList(Token).init(tokens.allocator);
+pub fn cleanTokens(tokens: *TokenList) !void {
+    var new_tokens = TokenList.init(tokens.allocator);
     defer new_tokens.deinit();
 
     var i: usize = 0;
@@ -291,6 +320,68 @@ pub fn cleanTokens(tokens: *std.ArrayList(Token)) !void {
         const token = tokens.items[i];
         switch (token.token_type) {
             .text, .force_newline => try new_tokens.append(token),
+            .escape => {
+                const next_token = tokens.items[i + 1];
+                if (!next_token.token_type.isEscapeable()) {
+                    try new_tokens.append(.{
+                        .token_type = .text,
+                        .lexeme = token.lexeme,
+                        .line = token.line,
+                    });
+                } else {
+                    try new_tokens.append(.{
+                        .token_type = .text,
+                        .lexeme = next_token.lexeme[0..1],
+                        .line = token.line,
+                    });
+                    tokens.items[i + 1] = .{
+                        .token_type = TokenType.of(next_token.lexeme[1..]),
+                        .lexeme = next_token.lexeme[1..],
+                        .line = next_token.line,
+                    };
+                }
+            },
+            .math => try combine(.math, false, &i, tokens, &new_tokens),
+            .math_block => try combine(.math_block, true, &i, tokens, &new_tokens),
+            .code => try combine(.code, false, &i, tokens, &new_tokens),
+            .code_block => try combine(.code_block, true, &i, tokens, &new_tokens),
+            .italic => try combine(.italic, false, &i, tokens, &new_tokens),
+            .bold => try combine(.bold, false, &i, tokens, &new_tokens),
         }
     }
+}
+
+fn combine(
+    comptime token_type: TokenType,
+    comptime is_multiline: bool,
+    index: *usize,
+    tokens: *const TokenList,
+    new_tokens: *TokenList,
+) !void {
+    const start_index = index.*;
+    var total_len = tokens.items[start_index].lexeme.len;
+
+    index.* += 1;
+    while (tokens.items[index.*].token_type != token_type) : (index.* += 1) {
+        // Handle if the line ends before the closing tag
+        if (!is_multiline and
+            (tokens.items[index.*].token_type != .newline or
+            tokens.items[index.*].token_type != .force_newline))
+        {
+            index.* = start_index;
+            return new_tokens.append(.{
+                .token_type = .text,
+                .lexeme = tokens.items[start_index].lexeme,
+                .line = tokens.items[start_index].line,
+            });
+        }
+
+        total_len += tokens.items[index.*].lexeme.len;
+    }
+
+    return new_tokens.append(.{
+        .token_type = token_type,
+        .lexeme = tokens.items[start_index].lexeme.ptr[0..total_len],
+        .line = tokens.items[start_index].line,
+    });
 }
