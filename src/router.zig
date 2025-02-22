@@ -1,8 +1,5 @@
 const std = @import("std");
 const zap = @import("zap");
-const md4c = @cImport({
-    @cInclude("md4c.h");
-});
 
 const Allocator = std.mem.Allocator;
 const Request = zap.Request;
@@ -200,7 +197,7 @@ fn serveVI(self: *Router, request: Request) void {
     ) catch |err| return self.handleError(request, err);
     defer self.allocator.free(file_contents);
 
-    const tokens = @import("tokenizer.zig").tokenize(self.allocator, file_contents) catch |err|
+    var tokens = @import("tokenizer.zig").tokenize(self.allocator, file_contents) catch |err|
         return self.handleError(request, err);
     defer tokens.deinit();
 

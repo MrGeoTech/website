@@ -68,7 +68,12 @@ pub const Token = struct {
         try writer.writeAll("Token{token_type:");
         try writer.writeAll(@tagName(self.token_type));
         try writer.writeAll(",lexeme:");
-        try writer.writeAll(self.lexeme);
+        var iterator = std.mem.splitScalar(u8, self.lexeme, '\n');
+        while (iterator.next()) |line| {
+            try writer.writeAll(line);
+            if (iterator.peek() != null)
+                try writer.writeAll("\\n");
+        }
         try writer.writeAll(",line:");
         try std.fmt.formatInt(self.line, 10, .lower, .{}, writer);
         try writer.writeByte('}');
@@ -208,7 +213,7 @@ const TokenizerState = struct {
             .lexeme = state.markdown[state.start..state.current],
             .line = state.line,
         });
-        state.start = state.current;
+        state.start = state.current + 1;
     }
 
     test "addToken/addText" {
@@ -311,15 +316,14 @@ test "tokenize" {
     try std.testing.expectEqual(1, tokens.items[3].line);
 }
 
-pub fn cleanTokens(tokens: *TokenList) !void {
+fn cleanTokens(tokens: *TokenList) !void {
     var new_tokens = TokenList.init(tokens.allocator);
-    defer new_tokens.deinit();
 
     var i: usize = 0;
     while (i < tokens.items.len) : (i += 1) {
         const token = tokens.items[i];
         switch (token.token_type) {
-            .text, .force_newline => try new_tokens.append(token),
+            .text, .newline, .force_newline => try new_tokens.append(token),
             .escape => {
                 const next_token = tokens.items[i + 1];
                 if (!next_token.token_type.isEscapeable()) {
@@ -349,6 +353,9 @@ pub fn cleanTokens(tokens: *TokenList) !void {
             .bold => try combine(.bold, false, &i, tokens, &new_tokens),
         }
     }
+
+    tokens.deinit();
+    tokens.* = new_tokens;
 }
 
 fn combine(
@@ -363,10 +370,11 @@ fn combine(
 
     index.* += 1;
     while (tokens.items[index.*].token_type != token_type) : (index.* += 1) {
+        const token = tokens.items[index.*];
         // Handle if the line ends before the closing tag
         if (!is_multiline and
-            (tokens.items[index.*].token_type != .newline or
-            tokens.items[index.*].token_type != .force_newline))
+            (token.token_type != .newline or
+            token.token_type != .force_newline))
         {
             index.* = start_index;
             return new_tokens.append(.{
@@ -376,8 +384,11 @@ fn combine(
             });
         }
 
-        total_len += tokens.items[index.*].lexeme.len;
+        total_len += token.lexeme.len +
+            if (token.token_type == .text) @as(usize, 1) else 0;
     }
+
+    total_len += tokens.items[index.*].lexeme.len + 1;
 
     return new_tokens.append(.{
         .token_type = token_type,
