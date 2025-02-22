@@ -15,6 +15,7 @@ pub const TokenType = enum {
     math_block,
     code,
     code_block,
+    metadata,
 
     pub fn toCharacters(self: TokenType) ?[]const u8 {
         return switch (self) {
@@ -28,6 +29,7 @@ pub const TokenType = enum {
             .math_block => "$$",
             .code => "`",
             .code_block => "```",
+            .metadata => "---",
         };
     }
 
@@ -54,6 +56,8 @@ pub const TokenType = enum {
             .newline
         else if (eql(u8, text, "  \n"))
             .force_newline
+        else if (eql(u8, text, "---"))
+            .metadata
         else
             .text;
     }
@@ -108,6 +112,12 @@ const TokenizerState = struct {
                 try state.addText();
                 try state.addToken(.escape);
             },
+            '-' => {
+                try state.addText();
+                if (state.matches("--")) {
+                    try state.addToken(.metadata);
+                }
+            },
             '`' => {
                 try state.addText();
                 if (state.matches("``"))
@@ -153,7 +163,7 @@ const TokenizerState = struct {
 
     test "scanToken" {
         var state = TokenizerState{
-            .markdown = "**test**more",
+            .markdown = "**test***more",
             .tokens = TokenList.init(std.testing.allocator),
             .current = 0,
         };
@@ -180,6 +190,8 @@ const TokenizerState = struct {
         try std.testing.expectEqual(.bold, state.tokens.items[2].token_type);
         try std.testing.expectEqualStrings("**", state.tokens.items[2].lexeme);
         try std.testing.expectEqual(1, state.tokens.items[2].line);
+
+        try state.scanToken();
 
         // The loop will call scan token until current >= markdown.len
         // Then, it will see that start < current and call addText one more time.
@@ -294,6 +306,21 @@ pub fn tokenize(allocator: std.mem.Allocator, markdown: []const u8) !TokenList {
 
     if (state.start != state.current) try state.addText();
 
+    var writer = std.io.getStdOut().writer();
+    for (state.tokens.items) |token| {
+        try token.write(writer);
+        try writer.writeByte('\n');
+    }
+
+    try writer.writeAll("---------------\n");
+
+    try cleanTokens(&state.tokens);
+
+    for (state.tokens.items) |token| {
+        try token.write(writer);
+        try writer.writeByte('\n');
+    }
+
     return state.tokens;
 }
 
@@ -351,6 +378,7 @@ fn cleanTokens(tokens: *TokenList) !void {
             .code_block => try combine(.code_block, true, &i, tokens, &new_tokens),
             .italic => try combine(.italic, false, &i, tokens, &new_tokens),
             .bold => try combine(.bold, false, &i, tokens, &new_tokens),
+            .metadata => try combine(.metadata, true, &i, tokens, &new_tokens),
         }
     }
 
@@ -388,7 +416,7 @@ fn combine(
             if (token.token_type == .text) @as(usize, 1) else 0;
     }
 
-    total_len += tokens.items[index.*].lexeme.len + 1;
+    total_len += tokens.items[index.*].lexeme.len;
 
     return new_tokens.append(.{
         .token_type = token_type,
