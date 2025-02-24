@@ -3,63 +3,25 @@ const std = @import("std");
 const TokenList = std.ArrayList(Token);
 
 const eql = std.mem.eql;
+const assert = std.debug.assert;
 
 pub const TokenType = enum {
     text,
+    html,
     newline,
-    force_newline,
-    escape,
+    forced_newline,
+    header_1,
+    header_2,
+    header_3,
+    header_4,
+    header_5,
+    header_6,
     bold,
     italic,
-    math,
-    math_block,
-    code,
-    code_block,
-    metadata,
-
-    pub fn toCharacters(self: TokenType) ?[]const u8 {
-        return switch (self) {
-            .text => null,
-            .newline => "\n",
-            .force_newline => "  \n",
-            .escape => "\\",
-            .bold => "**",
-            .italic => "*",
-            .math => "$",
-            .math_block => "$$",
-            .code => "`",
-            .code_block => "```",
-            .metadata => "---",
-        };
-    }
+    bold_italic,
 
     pub fn isEscapeable(self: TokenType) bool {
-        return self != .text and self != .force_newline and self != .newline;
-    }
-
-    pub fn of(text: []const u8) TokenType {
-        return if (eql(u8, text, "*"))
-            .italic
-        else if (eql(u8, text, "**"))
-            .bold
-        else if (eql(u8, text, "$"))
-            .math
-        else if (eql(u8, text, "$$"))
-            .math_block
-        else if (eql(u8, text, "`"))
-            .code
-        else if (eql(u8, text, "```"))
-            .code_block
-        else if (eql(u8, text, "\\"))
-            .escape
-        else if (eql(u8, text, "\n"))
-            .newline
-        else if (eql(u8, text, "  \n"))
-            .force_newline
-        else if (eql(u8, text, "---"))
-            .metadata
-        else
-            .text;
+        return self != .text and self != .newline and self != .forced_newline;
     }
 };
 
@@ -106,59 +68,76 @@ const TokenizerState = struct {
     current: usize = 0,
     line: usize = 1,
 
+    fn scanNewLine(state: *TokenizerState) !void {
+        if (state.current >= state.markdown.len) return;
+
+        const char = state.markdown[state.current];
+        while (state.markdown[state.current] == char) {
+            state.current += 1;
+            if (state.current >= state.markdown.len) {
+                state.current = state.start;
+                return;
+            }
+        }
+
+        const count = state.current - (state.start);
+        state.current -= 1;
+
+        return switch (char) {
+            '#' => switch (count) {
+                1 => state.addToken(.header_1),
+                2 => state.addToken(.header_2),
+                3 => state.addToken(.header_3),
+                4 => state.addToken(.header_4),
+                5 => state.addToken(.header_5),
+                6 => state.addToken(.header_6),
+                else => error.InvalidHeader,
+            },
+            else => state.current = state.start,
+        };
+    }
+
     fn scanToken(state: *TokenizerState) !void {
         switch (state.markdown[state.current]) {
-            '\\' => {
-                try state.addText();
-                try state.addToken(.escape);
-            },
-            '-' => {
-                try state.addText();
-                if (state.matches("--")) {
-                    try state.addToken(.metadata);
+            '<' => blk: {
+                var offset: usize = 0;
+                while (state.markdown[state.current + offset] != '>') {
+                    // Check if it is not an html tag
+                    if (std.ascii.isWhitespace(state.markdown[state.current + offset])) break :blk;
+                    offset += 1;
                 }
-            },
-            '`' => {
+                state.current += offset + 1;
                 try state.addText();
-                if (state.matches("``"))
-                    try state.addToken(.code_block)
-                else
-                    try state.addToken(.code);
+                try state.addToken(.html);
             },
-            '$' => {
+            '*', '_' => {
                 try state.addText();
-                if (state.matches("$"))
-                    try state.addToken(.math_block)
-                else
-                    try state.addToken(.math);
-            },
-            '*' => {
-                try state.addText();
-                if (state.matches("*"))
+                if (state.matches(3))
+                    try state.addToken(.bold_italic)
+                else if (state.matches(2))
                     try state.addToken(.bold)
                 else
                     try state.addToken(.italic);
             },
             ' ' => {
                 try state.addText();
-                if (state.matches(" \n")) {
-                    try state.addToken(.force_newline);
-                    state.line += 1;
-                } else {
-                    try state.addText();
-                }
+                // Skip multiple spaces
+                while (state.markdown[state.current] == ' ') state.current += 1;
+                state.start = state.current;
             },
             '\t', '\r' => {
                 try state.addText();
+                state.current += 1;
             },
             '\n' => {
                 try state.addText();
                 try state.addToken(.newline);
+                if (state.current >= state.markdown.len) return;
+                try state.scanNewLine();
                 state.line += 1;
             },
-            else => {},
+            else => state.current += 1,
         }
-        state.current += 1;
     }
 
     test "scanToken" {
@@ -208,12 +187,15 @@ const TokenizerState = struct {
     }
 
     fn addToken(state: *TokenizerState, token_type: TokenType) !void {
+        state.current += 1;
+        if (state.start >= state.current) return;
+
         try state.tokens.append(.{
             .token_type = token_type,
-            .lexeme = state.markdown[state.start .. state.current + 1],
+            .lexeme = state.markdown[state.start..state.current],
             .line = state.line,
         });
-        state.start = state.current + 1;
+        state.start = state.current;
     }
 
     fn addText(state: *TokenizerState) !void {
@@ -222,10 +204,10 @@ const TokenizerState = struct {
 
         try state.tokens.append(.{
             .token_type = .text,
-            .lexeme = state.markdown[state.start..state.current],
+            .lexeme = state.markdown[state.start .. state.current - 1],
             .line = state.line,
         });
-        state.start = state.current + 1;
+        state.start = state.current - 1;
     }
 
     test "addToken/addText" {
@@ -251,7 +233,6 @@ const TokenizerState = struct {
         try std.testing.expectEqualStrings("test", state.tokens.items[1].lexeme);
         try std.testing.expectEqual(1, state.tokens.items[1].line);
 
-        state.current += 1;
         try state.addToken(.bold);
 
         try std.testing.expectEqual(3, state.tokens.items.len);
@@ -268,11 +249,21 @@ const TokenizerState = struct {
         try std.testing.expectEqual(1, state.tokens.items[3].line);
     }
 
-    fn matches(self: *TokenizerState, comptime string: []const u8) bool {
-        if (self.current + string.len >= self.markdown.len) return false;
-        if (!std.mem.eql(u8, self.markdown[self.current + 1 ..][0..string.len], string)) return false;
+    fn matches(self: *TokenizerState, comptime total_count: comptime_int) bool {
+        comptime assert(total_count > 0);
+        if (total_count == 1) {
+            self.current += 1;
+            return true;
+        }
 
-        self.current += string.len;
+        if (self.current + total_count - 1 >= self.markdown.len) return false;
+
+        const char = self.markdown[self.current];
+        for (1..total_count - 1) |i| {
+            if (self.markdown[self.current + i] != char) return false;
+        }
+
+        self.current += total_count - 1;
         return true;
     }
 
@@ -283,12 +274,12 @@ const TokenizerState = struct {
         };
         defer state.tokens.deinit();
 
-        try std.testing.expect(state.matches("*"));
+        try std.testing.expect(state.matches(1));
         try std.testing.expectEqual(1, state.current);
 
         state.current = 6;
 
-        try std.testing.expect(state.matches("*"));
+        try std.testing.expect(state.matches(2));
         try std.testing.expectEqual(7, state.current);
     }
 };
@@ -299,12 +290,12 @@ pub fn tokenize(allocator: std.mem.Allocator, markdown: []const u8) !TokenList {
         .tokens = TokenList.init(allocator),
     };
 
-    std.debug.assert(state.markdown.len > 0);
+    assert(state.markdown.len > 0);
     while (state.current < state.markdown.len) {
         try state.scanToken();
     }
 
-    if (state.start != state.current) try state.addText();
+    if (state.start < state.current) try state.addText();
 
     var writer = std.io.getStdOut().writer();
     for (state.tokens.items) |token| {
@@ -324,66 +315,61 @@ pub fn tokenize(allocator: std.mem.Allocator, markdown: []const u8) !TokenList {
     return state.tokens;
 }
 
-test "tokenize" {
-    var tokens = try tokenize(std.testing.allocator, "**test**more");
-    defer tokens.deinit();
-
-    try std.testing.expectEqual(4, tokens.items.len);
-    try std.testing.expectEqual(.bold, tokens.items[0].token_type);
-    try std.testing.expectEqualStrings("**", tokens.items[0].lexeme);
-    try std.testing.expectEqual(1, tokens.items[0].line);
-    try std.testing.expectEqual(.text, tokens.items[1].token_type);
-    try std.testing.expectEqualStrings("test", tokens.items[1].lexeme);
-    try std.testing.expectEqual(1, tokens.items[1].line);
-    try std.testing.expectEqual(.bold, tokens.items[2].token_type);
-    try std.testing.expectEqualStrings("**", tokens.items[2].lexeme);
-    try std.testing.expectEqual(1, tokens.items[2].line);
-    try std.testing.expectEqual(.text, tokens.items[3].token_type);
-    try std.testing.expectEqualStrings("more", tokens.items[3].lexeme);
-    try std.testing.expectEqual(1, tokens.items[3].line);
-}
-
 fn cleanTokens(tokens: *TokenList) !void {
     var new_tokens = TokenList.init(tokens.allocator);
 
     var i: usize = 0;
+
+    // Handle metadata
+    //if (tokens.items[0].token_type == .horizontal_rule) {
+    //    while (i < tokens.items.len and tokens.items[i].token_type != .horizontal_rule) i += 1;
+
+    //    const end_token = tokens.items[i];
+    //    const end_ptr_int = @as(usize, @intFromPtr(end_token.lexeme.ptr)) + end_token.lexeme.len;
+    //    const start_ptr_int: usize = @intFromPtr(tokens.items[0].lexeme.ptr);
+
+    //    try new_tokens.append(.{
+    //        .token_type = .metadata,
+    //        .lexeme = tokens.items[0].lexeme[0 .. end_ptr_int - start_ptr_int],
+    //        .line = 1,
+    //    });
+    //}
+
     while (i < tokens.items.len) : (i += 1) {
         const token = tokens.items[i];
         switch (token.token_type) {
-            .text, .newline, .force_newline => try new_tokens.append(token),
-            .escape => {
-                const next_token = tokens.items[i + 1];
-                if (!next_token.token_type.isEscapeable()) {
-                    try new_tokens.append(.{
-                        .token_type = .text,
-                        .lexeme = token.lexeme,
-                        .line = token.line,
-                    });
-                } else {
-                    try new_tokens.append(.{
-                        .token_type = .text,
-                        .lexeme = next_token.lexeme[0..1],
-                        .line = token.line,
-                    });
-                    tokens.items[i + 1] = .{
-                        .token_type = TokenType.of(next_token.lexeme[1..]),
-                        .lexeme = next_token.lexeme[1..],
-                        .line = next_token.line,
-                    };
-                }
+            .header_1, .header_2, .header_3, .header_4, .header_5, .header_6 => {
+                try combineNewLine(token.token_type, &i, tokens, &new_tokens);
             },
-            .math => try combine(.math, false, &i, tokens, &new_tokens),
-            .math_block => try combine(.math_block, true, &i, tokens, &new_tokens),
-            .code => try combine(.code, false, &i, tokens, &new_tokens),
-            .code_block => try combine(.code_block, true, &i, tokens, &new_tokens),
-            .italic => try combine(.italic, false, &i, tokens, &new_tokens),
-            .bold => try combine(.bold, false, &i, tokens, &new_tokens),
-            .metadata => try combine(.metadata, true, &i, tokens, &new_tokens),
+            else => try new_tokens.append(token),
         }
     }
 
     tokens.deinit();
     tokens.* = new_tokens;
+}
+
+fn combineNewLine(
+    token_type: TokenType,
+    index: *usize,
+    tokens: *const TokenList,
+    new_tokens: *TokenList,
+) !void {
+    const start_index = index.* + 1;
+    while (tokens.items[index.*].token_type != .newline) index.* += 1;
+
+    const start_token = tokens.items[start_index];
+    const end_token = tokens.items[index.* - 1];
+
+    const start: usize = @intFromPtr(start_token.lexeme.ptr);
+    const end = @as(usize, @intFromPtr(end_token.lexeme.ptr)) + end_token.lexeme.len;
+    const total_len = end - start;
+
+    return new_tokens.append(.{
+        .token_type = token_type,
+        .lexeme = start_token.lexeme.ptr[0..total_len],
+        .line = start_token.line,
+    });
 }
 
 fn combine(
@@ -394,7 +380,6 @@ fn combine(
     new_tokens: *TokenList,
 ) !void {
     const start_index = index.*;
-    var total_len = tokens.items[start_index].lexeme.len;
 
     index.* += 1;
     while (tokens.items[index.*].token_type != token_type) : (index.* += 1) {
@@ -411,12 +396,12 @@ fn combine(
                 .line = tokens.items[start_index].line,
             });
         }
-
-        total_len += token.lexeme.len +
-            if (token.token_type == .text) @as(usize, 1) else 0;
     }
 
-    total_len += tokens.items[index.*].lexeme.len;
+    const start: usize = @intFromPtr(tokens.items[start_index].lexeme.ptr);
+    const end = @as(usize, @intFromPtr(tokens.items[index.*].lexeme.ptr)) +
+        tokens.items[index.*].lexeme.len;
+    const total_len = end - start;
 
     return new_tokens.append(.{
         .token_type = token_type,
