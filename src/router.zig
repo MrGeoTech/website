@@ -34,6 +34,19 @@ pub fn init(allocator: Allocator) !Router {
     const static_dir_path = try static_dir.realpathAlloc(allocator, ".");
     errdefer allocator.free(static_dir_path);
 
+    // TODO: Remove -----
+    // Read in file contents, max size 1 MiB
+    const file_contents = try docs_dir.readFileAlloc(
+        allocator,
+        "test.md",
+        1024 * 1024,
+    );
+    defer allocator.free(file_contents);
+
+    var tokens = try @import("tokenizer.zig").tokenize(allocator, file_contents);
+    defer tokens.deinit();
+    // TODO: -----
+
     return .{
         .allocator = allocator,
         .arena = arena,

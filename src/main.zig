@@ -24,18 +24,19 @@ pub fn main() !void {
     std.log.info("Starting server", .{});
     defer std.log.info("Stopping server", .{});
 
-    var listener = zap.HttpListener.init(.{
-        .port = if (builtin.mode == .Debug) 8080 else 82,
-        .on_request = router_zap.on_request_handler(),
-        .log = true,
-        .max_clients = 10_000,
-    });
-    try listener.listen();
+    // TODO: Uncomment
+    //var listener = zap.HttpListener.init(.{
+    //    .port = if (builtin.mode == .Debug) 8080 else 82,
+    //    .on_request = router_zap.on_request_handler(),
+    //    .log = true,
+    //    .max_clients = 10_000,
+    //});
+    //try listener.listen();
 
-    zap.start(.{
-        .threads = 1,
-        .workers = 1,
-    });
+    //zap.start(.{
+    //    .threads = 1,
+    //    .workers = 1,
+    //});
 }
 
 test "main" {
