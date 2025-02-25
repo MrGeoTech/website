@@ -1,8 +1,9 @@
 const builtin = @import("builtin");
 const std = @import("std");
 const zap = @import("zap");
+const lexer = @import("lexer.zig");
 
-const Router = @import("router.zig");
+//const Router = @import("router.zig");
 const Allocator = std.mem.Allocator;
 
 const assert = std.debug.assert;
@@ -15,14 +16,33 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
-    var router = try Router.init(allocator);
-    defer router.deinit();
+    var docs_dir = try std.fs.cwd().openDir("docs", .{});
+    defer docs_dir.close();
 
-    var router_zap = try router.getRouter();
-    defer router_zap.deinit();
+    const markdown = try docs_dir.readFileAlloc(
+        allocator,
+        "test.md",
+        1024 * 1024,
+    );
+    defer allocator.free(markdown);
 
-    std.log.info("Starting server", .{});
-    defer std.log.info("Stopping server", .{});
+    const lexemes = try lexer.process(allocator, markdown);
+    defer lexemes.deinit();
+
+    const writer = std.io.getStdOut().writer();
+    for (lexemes.items) |lexeme| {
+        try lexeme.write(writer);
+        try writer.writeByte('\n');
+    }
+
+    //var router = try Router.init(allocator);
+    //defer router.deinit();
+
+    //var router_zap = try router.getRouter();
+    //defer router_zap.deinit();
+
+    //std.log.info("Starting server", .{});
+    //defer std.log.info("Stopping server", .{});
 
     // TODO: Uncomment
     //var listener = zap.HttpListener.init(.{
@@ -40,5 +60,5 @@ pub fn main() !void {
 }
 
 test "main" {
-    std.testing.refAllDeclsRecursive(@import("tokenizer.zig"));
+    std.testing.refAllDeclsRecursive(@import("lexer.zig"));
 }
