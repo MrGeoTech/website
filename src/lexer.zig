@@ -66,6 +66,11 @@ const LexerState = struct {
             std.log.debug("{c}", .{char});
 
         switch (char) {
+            '\\' => {
+                try state.addLexeme(.text);
+                state.current += 1;
+                try state.addLexeme(.escape);
+            },
             '#' => {
                 while (state.markdown[state.current] == char) {
                     state.current += 1;
@@ -84,13 +89,59 @@ const LexerState = struct {
                     else => error.InvalidHeader,
                 };
             },
-            '>' => while (state.markdown[state.current] == '>') {
-                state.current += 1;
-                try state.addLexeme(.blockquote);
+            '>' => {
+                while (state.markdown[state.current] == '>') {
+                    state.current += 1;
+                    try state.addLexeme(.blockquote);
+                }
+                try state.scanNewLine();
             },
             '1', '2', '3', '4', '5', '6', '7', '8', '9' => {
                 while (state.markdown[state.current] >= '0' and
                     state.markdown[state.current] <= '9') state.current += 1;
+
+                if (state.markdown[state.current] != '.') {
+                    state.current = state.start;
+                    return;
+                }
+
+                state.current += 1;
+                try state.addLexeme(.ordered_list);
+            },
+            '*', '+' => {
+                if (state.markdown[state.current + 1] != char) return;
+
+                state.current += 1;
+                try state.addLexeme(.unordered_list);
+            },
+            '`' => {
+                // Return if the code block doesn't start the the start of the line
+                if (state.current > 0 and state.markdown[state.current - 1] != '\n') return;
+
+                if (!state.matches(3)) return;
+                try state.addLexeme(.code_block);
+
+                if (std.ascii.isWhitespace(state.markdown[state.current])) return;
+
+                while (state.current < state.markdown.len and
+                    state.markdown[state.current] != '\n') state.current += 1;
+
+                try state.addLexeme(.code_lang);
+            },
+            '-' => {
+                // Check if it is an unordered list
+                if (state.markdown[state.current + 1] != '-') {
+                    state.current += 1;
+                    try state.addLexeme(.unordered_list);
+                    return;
+                }
+
+                // Return if the code block doesn't start the the start of the line
+                if (state.current > 0 and state.markdown[state.current - 1] != '\n') return;
+
+                while (state.markdown[state.current] != char) state.current += 1;
+
+                try state.addLexeme(.horizontal_rule);
             },
             ' ' => {
                 // Adjust to skipping first space
@@ -114,7 +165,7 @@ const LexerState = struct {
 
     test "scanNewLine" {
         var state = LexerState{
-            .markdown = "\n ### Header 1\n    >> Test",
+            .markdown = "\n ### Header 1\n    >> Test\n 90. First",
             .lexemes = LexemeList.init(std.testing.allocator),
             .current = 0,
         };
@@ -161,23 +212,29 @@ const LexerState = struct {
         try std.testing.expectEqual(.blockquote, state.lexemes.items[4].lexeme_type);
         try std.testing.expectEqualStrings(">", state.lexemes.items[4].value);
         try std.testing.expectEqual(3, state.lexemes.items[4].line);
+
+        state.start = 27;
+        state.current = 27;
+        state.line += 1;
+        try state.scanNewLine();
+
+        try std.testing.expectEqual(6, state.lexemes.items.len);
+        try std.testing.expectEqual(.ordered_list, state.lexemes.items[5].lexeme_type);
+        try std.testing.expectEqualStrings("90.", state.lexemes.items[5].value);
+        try std.testing.expectEqual(4, state.lexemes.items[5].line);
     }
 
     fn scanLexeme(state: *LexerState) !void {
         switch (state.markdown[state.current]) {
-            '<' => blk: {
-                var offset: usize = 0;
-                while (state.markdown[state.current + offset] != '>') {
-                    // Check if it is not an html tag
-                    if (state.markdown[state.current + offset] == '\n') {
-                        state.current += 1;
-                        break :blk;
-                    }
-                    offset += 1;
-                }
+            '<' => {
                 try state.addLexeme(.text);
-                state.current += offset + 1;
-                try state.addLexeme(.html);
+                state.current += 1;
+                try state.addLexeme(.html_start);
+            },
+            '>' => {
+                try state.addLexeme(.text);
+                state.current += 1;
+                try state.addLexeme(.html_end);
             },
             '*', '_' => {
                 try state.addLexeme(.text);
@@ -198,6 +255,43 @@ const LexerState = struct {
                     state.current += 1;
                     state.start = state.current;
                 }
+            },
+            '`' => {
+                try state.addLexeme(.text);
+                if (state.matches(2))
+                    try state.addLexeme(.escape_backticks)
+                else if (state.matches(1))
+                    try state.addLexeme(.code);
+            },
+            '!' => {
+                try state.addLexeme(.text);
+                state.current += 1;
+                try state.addLexeme(.image_start);
+            },
+            '[' => {
+                try state.addLexeme(.text);
+                state.current += 1;
+                try state.addLexeme(.alt_start);
+            },
+            ']' => {
+                try state.addLexeme(.text);
+                state.current += 1;
+                try state.addLexeme(.alt_end);
+            },
+            '(' => {
+                try state.addLexeme(.text);
+                state.current += 1;
+                try state.addLexeme(.url_start);
+            },
+            ')' => {
+                try state.addLexeme(.text);
+                state.current += 1;
+                try state.addLexeme(.url_end);
+            },
+            '&' => {
+                try state.addLexeme(.text);
+                state.current += 1;
+                try state.addLexeme(.ampersand);
             },
             '\t', '\r' => {
                 try state.addLexeme(.text);

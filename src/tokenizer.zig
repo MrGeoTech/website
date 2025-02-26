@@ -6,11 +6,14 @@ const eql = std.mem.eql;
 const assert = std.debug.assert;
 
 pub const TokenType = enum {
+    escape,
     indent,
     text,
     newline,
     forced_newline,
     html,
+    html_start,
+    html_end,
     header_1,
     header_2,
     header_3,
@@ -21,6 +24,21 @@ pub const TokenType = enum {
     bold,
     italic,
     bold_italic,
+    ordered_list,
+    unordered_list,
+    escape_backticks,
+    code,
+    code_block,
+    code_lang,
+    horizontal_rule,
+    link,
+    image,
+    image_start,
+    alt_start,
+    alt_end,
+    url_start,
+    url_end,
+    ampersand,
 
     pub fn isEscapeable(self: TokenType) bool {
         return self != .text and self != .newline and self != .forced_newline;
