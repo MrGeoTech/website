@@ -6,16 +6,18 @@ const eql = std.mem.eql;
 const assert = std.debug.assert;
 
 pub const TokenType = enum {
+    indent,
     text,
-    html,
     newline,
     forced_newline,
+    html,
     header_1,
     header_2,
     header_3,
     header_4,
     header_5,
     header_6,
+    blockquote,
     bold,
     italic,
     bold_italic,

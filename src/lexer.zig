@@ -13,7 +13,11 @@ pub const Lexeme = struct {
 
     pub fn write(self: Lexeme, writer: anytype) !void {
         try writer.writeAll("Lexeme{lexeme_type:");
+        if (self.lexeme_type.isEscapeable())
+            try writer.writeAll("\x1B[0;32m");
         try writer.writeAll(@tagName(self.lexeme_type));
+        if (self.lexeme_type.isEscapeable())
+            try writer.writeAll("\x1B[0m");
         try writer.writeAll(",value:");
         var iterator = std.mem.splitScalar(u8, self.value, '\n');
         while (iterator.next()) |line| {
@@ -51,30 +55,112 @@ const LexerState = struct {
 
     fn scanNewLine(state: *LexerState) !void {
         if (state.current >= state.markdown.len) return;
-
-        const char = state.markdown[state.current];
-        while (state.markdown[state.current] == char) {
+        if (state.markdown[state.current] == ' ') {
+            if (state.current + 1 >= state.markdown.len) return;
             state.current += 1;
-            if (state.current >= state.markdown.len) {
-                state.current = state.start;
-                return;
-            }
+            state.start += 1;
         }
 
-        const count = state.current - state.start;
+        const char = state.markdown[state.current];
+        if (state.line > 77 and state.line < 90)
+            std.log.debug("{c}", .{char});
 
-        return switch (char) {
-            '#' => switch (count) {
-                1 => state.addLexeme(.header_1),
-                2 => state.addLexeme(.header_2),
-                3 => state.addLexeme(.header_3),
-                4 => state.addLexeme(.header_4),
-                5 => state.addLexeme(.header_5),
-                6 => state.addLexeme(.header_6),
-                else => error.InvalidHeader,
+        switch (char) {
+            '#' => {
+                while (state.markdown[state.current] == char) {
+                    state.current += 1;
+                    if (state.current >= state.markdown.len) {
+                        state.current = state.start;
+                        return;
+                    }
+                }
+                return switch (state.current - state.start) {
+                    1 => state.addLexeme(.header_1),
+                    2 => state.addLexeme(.header_2),
+                    3 => state.addLexeme(.header_3),
+                    4 => state.addLexeme(.header_4),
+                    5 => state.addLexeme(.header_5),
+                    6 => state.addLexeme(.header_6),
+                    else => error.InvalidHeader,
+                };
             },
-            else => state.current = state.start + 1,
+            '>' => while (state.markdown[state.current] == '>') {
+                state.current += 1;
+                try state.addLexeme(.blockquote);
+            },
+            '1', '2', '3', '4', '5', '6', '7', '8', '9' => {
+                while (state.markdown[state.current] >= '0' and
+                    state.markdown[state.current] <= '9') state.current += 1;
+            },
+            ' ' => {
+                // Adjust to skipping first space
+                state.current -= 1;
+                state.start -= 1;
+                while (state.matches(4)) try state.addLexeme(.indent);
+                while (state.markdown[state.current] == ' ') state.current += 1;
+                state.start = state.current;
+                try state.scanNewLine();
+            },
+            '\t' => {
+                while (state.markdown[state.current] == '\t') {
+                    state.current += 1;
+                    try state.addLexeme(.indent);
+                }
+                try state.scanNewLine();
+            },
+            else => state.current = state.start,
+        }
+    }
+
+    test "scanNewLine" {
+        var state = LexerState{
+            .markdown = "\n ### Header 1\n    >> Test",
+            .lexemes = LexemeList.init(std.testing.allocator),
+            .current = 0,
         };
+        defer state.lexemes.deinit();
+
+        try state.scanNewLine();
+
+        try std.testing.expectEqual(0, state.lexemes.items.len);
+        try std.testing.expectEqual(0, state.start);
+        try std.testing.expectEqual(0, state.current);
+        try std.testing.expectEqual(1, state.line);
+
+        try state.addLexeme(.text);
+        state.current += 1;
+        try state.addLexeme(.newline);
+        state.line += 1;
+
+        try std.testing.expectEqual(1, state.lexemes.items.len);
+        try std.testing.expectEqual(1, state.current);
+        try std.testing.expectEqual(2, state.line);
+        try std.testing.expectEqual(.newline, state.lexemes.items[0].lexeme_type);
+        try std.testing.expectEqualStrings("\n", state.lexemes.items[0].value);
+        try std.testing.expectEqual(1, state.lexemes.items[0].line);
+
+        try state.scanNewLine();
+
+        try std.testing.expectEqual(2, state.lexemes.items.len);
+        try std.testing.expectEqual(.header_3, state.lexemes.items[1].lexeme_type);
+        try std.testing.expectEqualStrings("###", state.lexemes.items[1].value);
+        try std.testing.expectEqual(2, state.lexemes.items[1].line);
+
+        state.start = 15;
+        state.current = 15;
+        state.line += 1;
+        try state.scanNewLine();
+
+        try std.testing.expectEqual(5, state.lexemes.items.len);
+        try std.testing.expectEqual(.indent, state.lexemes.items[2].lexeme_type);
+        try std.testing.expectEqualStrings("    ", state.lexemes.items[2].value);
+        try std.testing.expectEqual(3, state.lexemes.items[2].line);
+        try std.testing.expectEqual(.blockquote, state.lexemes.items[3].lexeme_type);
+        try std.testing.expectEqualStrings(">", state.lexemes.items[3].value);
+        try std.testing.expectEqual(3, state.lexemes.items[3].line);
+        try std.testing.expectEqual(.blockquote, state.lexemes.items[4].lexeme_type);
+        try std.testing.expectEqualStrings(">", state.lexemes.items[4].value);
+        try std.testing.expectEqual(3, state.lexemes.items[4].line);
     }
 
     fn scanLexeme(state: *LexerState) !void {
@@ -105,8 +191,9 @@ const LexerState = struct {
             ' ' => {
                 try state.addLexeme(.text);
                 if (state.matchesString("  \n")) {
-                    state.line += 1;
                     try state.addLexeme(.forced_newline);
+                    state.line += 1;
+                    try state.scanNewLine();
                 } else {
                     state.current += 1;
                     state.start = state.current;
@@ -120,9 +207,8 @@ const LexerState = struct {
                 try state.addLexeme(.text);
                 state.current += 1;
                 try state.addLexeme(.newline);
-                if (state.current >= state.markdown.len) return;
-                try state.scanNewLine();
                 state.line += 1;
+                try state.scanNewLine();
             },
             else => state.current += 1,
         }
@@ -173,6 +259,7 @@ const LexerState = struct {
     }
 
     fn addLexeme(state: *LexerState, lexeme_type: TokenType) !void {
+        if (state.current > state.markdown.len) return;
         if (state.start >= state.current) return;
 
         try state.lexemes.append(.{
@@ -221,6 +308,49 @@ const LexerState = struct {
         try std.testing.expectEqual(.text, state.lexemes.items[3].lexeme_type);
         try std.testing.expectEqualStrings("more", state.lexemes.items[3].value);
         try std.testing.expectEqual(1, state.lexemes.items[3].line);
+
+        // Ignore zero-length strings
+        try state.addLexeme(.text);
+        try std.testing.expectEqual(4, state.lexemes.items.len);
+
+        // Gracefully handle overrunning the markdown
+        state.current += 1;
+        try state.addLexeme(.text);
+        try std.testing.expectEqual(4, state.lexemes.items.len);
+    }
+
+    fn matching(self: *LexerState, comptime predicate: fn (char: u8) bool) usize {
+        const start = self.current;
+        while (predicate(self.markdown[self.current])) {
+            self.current += 1;
+            if (self.current >= self.markdown.len) return self.current - start;
+        }
+        return self.current - start;
+    }
+
+    test "matching" {
+        var state = LexerState{
+            .markdown = "**test**",
+            .lexemes = LexemeList.init(std.testing.allocator),
+        };
+        defer state.lexemes.deinit();
+
+        const bold_predicate = struct {
+            fn predicate(char: u8) bool {
+                return char == '*';
+            }
+        }.predicate;
+
+        try std.testing.expectEqual(2, state.matching(bold_predicate));
+        try std.testing.expectEqual(2, state.current);
+        try std.testing.expectEqual(0, state.matching(bold_predicate));
+        try std.testing.expectEqual(2, state.current);
+        state.current = 1;
+        try std.testing.expectEqual(1, state.matching(bold_predicate));
+        try std.testing.expectEqual(2, state.current);
+        state.current = 6;
+        try std.testing.expectEqual(2, state.matching(bold_predicate));
+        try std.testing.expectEqual(8, state.current);
     }
 
     fn matches(self: *LexerState, comptime total_count: comptime_int) bool {

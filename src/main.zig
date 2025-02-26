@@ -31,6 +31,7 @@ pub fn main() !void {
 
     const writer = std.io.getStdOut().writer();
     for (lexemes.items) |lexeme| {
+        if (lexeme.line < 77 or lexeme.line > 90) continue;
         try lexeme.write(writer);
         try writer.writeByte('\n');
     }
