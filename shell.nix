@@ -6,7 +6,7 @@ stdenv.mkDerivation rec {
     # Build dependencies
     buildInputs = with pkgs; [ 
         zig
-        md4c
+        kcov
     ];
 }
 

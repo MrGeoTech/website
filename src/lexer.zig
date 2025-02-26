@@ -62,8 +62,6 @@ const LexerState = struct {
         }
 
         const char = state.markdown[state.current];
-        if (state.line > 77 and state.line < 90)
-            std.log.debug("{c}", .{char});
 
         switch (char) {
             '\\' => {
@@ -74,10 +72,7 @@ const LexerState = struct {
             '#' => {
                 while (state.markdown[state.current] == char) {
                     state.current += 1;
-                    if (state.current >= state.markdown.len) {
-                        state.current = state.start;
-                        return;
-                    }
+                    if (state.current >= state.markdown.len) break;
                 }
                 return switch (state.current - state.start) {
                     1 => state.addLexeme(.header_1),
@@ -163,9 +158,9 @@ const LexerState = struct {
         }
     }
 
-    test "scanNewLine" {
+    test "scanNewLine Do Nothing" {
         var state = LexerState{
-            .markdown = "\n ### Header 1\n    >> Test\n 90. First",
+            .markdown = "\n ### Test doing nothing",
             .lexemes = LexemeList.init(std.testing.allocator),
             .current = 0,
         };
@@ -177,51 +172,252 @@ const LexerState = struct {
         try std.testing.expectEqual(0, state.start);
         try std.testing.expectEqual(0, state.current);
         try std.testing.expectEqual(1, state.line);
+    }
 
-        try state.addLexeme(.text);
-        state.current += 1;
-        try state.addLexeme(.newline);
-        state.line += 1;
+    test "scanNewLine Begining Extra Space" {
+        var state = LexerState{
+            .markdown = " # Test header 1",
+            .lexemes = LexemeList.init(std.testing.allocator),
+            .current = 0,
+        };
+        defer state.lexemes.deinit();
+
+        try state.scanNewLine();
 
         try std.testing.expectEqual(1, state.lexemes.items.len);
-        try std.testing.expectEqual(1, state.current);
-        try std.testing.expectEqual(2, state.line);
-        try std.testing.expectEqual(.newline, state.lexemes.items[0].lexeme_type);
-        try std.testing.expectEqualStrings("\n", state.lexemes.items[0].value);
+        try std.testing.expectEqual(.header_1, state.lexemes.items[0].lexeme_type);
+        try std.testing.expectEqualStrings("#", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(2, state.start);
+        try std.testing.expectEqual(2, state.current);
+        try std.testing.expectEqual(1, state.line);
+    }
+
+    test "scanNewLine One Space Indent" {
+        var state = LexerState{
+            .markdown = "    # Test header 1",
+            .lexemes = LexemeList.init(std.testing.allocator),
+            .current = 0,
+        };
+        defer state.lexemes.deinit();
 
         try state.scanNewLine();
 
         try std.testing.expectEqual(2, state.lexemes.items.len);
-        try std.testing.expectEqual(.header_3, state.lexemes.items[1].lexeme_type);
-        try std.testing.expectEqualStrings("###", state.lexemes.items[1].value);
-        try std.testing.expectEqual(2, state.lexemes.items[1].line);
+        try std.testing.expectEqual(.indent, state.lexemes.items[0].lexeme_type);
+        try std.testing.expectEqualStrings("    ", state.lexemes.items[0].value);
+        try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(.header_1, state.lexemes.items[1].lexeme_type);
+        try std.testing.expectEqualStrings("#", state.lexemes.items[1].value);
+        try std.testing.expectEqual(1, state.lexemes.items[1].line);
+        try std.testing.expectEqual(5, state.start);
+        try std.testing.expectEqual(5, state.current);
+        try std.testing.expectEqual(1, state.line);
+    }
 
-        state.start = 15;
-        state.current = 15;
-        state.line += 1;
+    test "scanNewLine Multiple Space Indent" {
+        var state = LexerState{
+            .markdown = "        # Test header 1",
+            .lexemes = LexemeList.init(std.testing.allocator),
+            .current = 0,
+        };
+        defer state.lexemes.deinit();
+
         try state.scanNewLine();
 
-        try std.testing.expectEqual(5, state.lexemes.items.len);
-        try std.testing.expectEqual(.indent, state.lexemes.items[2].lexeme_type);
-        try std.testing.expectEqualStrings("    ", state.lexemes.items[2].value);
-        try std.testing.expectEqual(3, state.lexemes.items[2].line);
-        try std.testing.expectEqual(.blockquote, state.lexemes.items[3].lexeme_type);
-        try std.testing.expectEqualStrings(">", state.lexemes.items[3].value);
-        try std.testing.expectEqual(3, state.lexemes.items[3].line);
-        try std.testing.expectEqual(.blockquote, state.lexemes.items[4].lexeme_type);
-        try std.testing.expectEqualStrings(">", state.lexemes.items[4].value);
-        try std.testing.expectEqual(3, state.lexemes.items[4].line);
+        try std.testing.expectEqual(3, state.lexemes.items.len);
+        try std.testing.expectEqual(.indent, state.lexemes.items[0].lexeme_type);
+        try std.testing.expectEqualStrings("    ", state.lexemes.items[0].value);
+        try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(.indent, state.lexemes.items[1].lexeme_type);
+        try std.testing.expectEqualStrings("    ", state.lexemes.items[1].value);
+        try std.testing.expectEqual(1, state.lexemes.items[1].line);
+        try std.testing.expectEqual(.header_1, state.lexemes.items[2].lexeme_type);
+        try std.testing.expectEqualStrings("#", state.lexemes.items[2].value);
+        try std.testing.expectEqual(1, state.lexemes.items[2].line);
+        try std.testing.expectEqual(9, state.start);
+        try std.testing.expectEqual(9, state.current);
+        try std.testing.expectEqual(1, state.line);
+    }
 
-        state.start = 27;
-        state.current = 27;
-        state.line += 1;
+    test "scanNewLine One Tab Indent" {
+        var state = LexerState{
+            .markdown = "\t# Test header 1",
+            .lexemes = LexemeList.init(std.testing.allocator),
+            .current = 0,
+        };
+        defer state.lexemes.deinit();
+
         try state.scanNewLine();
 
-        try std.testing.expectEqual(6, state.lexemes.items.len);
-        try std.testing.expectEqual(.ordered_list, state.lexemes.items[5].lexeme_type);
-        try std.testing.expectEqualStrings("90.", state.lexemes.items[5].value);
-        try std.testing.expectEqual(4, state.lexemes.items[5].line);
+        try std.testing.expectEqual(2, state.lexemes.items.len);
+        try std.testing.expectEqual(.indent, state.lexemes.items[0].lexeme_type);
+        try std.testing.expectEqualStrings("\t", state.lexemes.items[0].value);
+        try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(.header_1, state.lexemes.items[1].lexeme_type);
+        try std.testing.expectEqualStrings("#", state.lexemes.items[1].value);
+        try std.testing.expectEqual(1, state.lexemes.items[1].line);
+        try std.testing.expectEqual(2, state.start);
+        try std.testing.expectEqual(2, state.current);
+        try std.testing.expectEqual(1, state.line);
+    }
+
+    test "scanNewLine Multiple Tab Indent" {
+        var state = LexerState{
+            .markdown = "\t\t# Test header 1",
+            .lexemes = LexemeList.init(std.testing.allocator),
+            .current = 0,
+        };
+        defer state.lexemes.deinit();
+
+        try state.scanNewLine();
+
+        try std.testing.expectEqual(3, state.lexemes.items.len);
+        try std.testing.expectEqual(.indent, state.lexemes.items[0].lexeme_type);
+        try std.testing.expectEqualStrings("\t", state.lexemes.items[0].value);
+        try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(.indent, state.lexemes.items[1].lexeme_type);
+        try std.testing.expectEqualStrings("\t", state.lexemes.items[1].value);
+        try std.testing.expectEqual(1, state.lexemes.items[1].line);
+        try std.testing.expectEqual(.header_1, state.lexemes.items[2].lexeme_type);
+        try std.testing.expectEqualStrings("#", state.lexemes.items[2].value);
+        try std.testing.expectEqual(1, state.lexemes.items[2].line);
+        try std.testing.expectEqual(3, state.start);
+        try std.testing.expectEqual(3, state.current);
+        try std.testing.expectEqual(1, state.line);
+    }
+
+    test "scanNewLine Header EOF" {
+        var state = LexerState{
+            .markdown = "#",
+            .lexemes = LexemeList.init(std.testing.allocator),
+            .current = 0,
+        };
+        defer state.lexemes.deinit();
+
+        try state.scanNewLine();
+
+        try std.testing.expectEqual(1, state.lexemes.items.len);
+        try std.testing.expectEqual(.header_1, state.lexemes.items[0].lexeme_type);
+        try std.testing.expectEqualStrings("#", state.lexemes.items[0].value);
+        try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(1, state.start);
+        try std.testing.expectEqual(1, state.current);
+        try std.testing.expectEqual(1, state.line);
+    }
+
+    test "scanNewLine Header 1" {
+        var state = LexerState{
+            .markdown = "# Test header 1",
+            .lexemes = LexemeList.init(std.testing.allocator),
+            .current = 0,
+        };
+        defer state.lexemes.deinit();
+
+        try state.scanNewLine();
+
+        try std.testing.expectEqual(1, state.lexemes.items.len);
+        try std.testing.expectEqual(.header_1, state.lexemes.items[0].lexeme_type);
+        try std.testing.expectEqualStrings("#", state.lexemes.items[0].value);
+        try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(1, state.start);
+        try std.testing.expectEqual(1, state.current);
+        try std.testing.expectEqual(1, state.line);
+    }
+
+    test "scanNewLine Header 2" {
+        var state = LexerState{
+            .markdown = "## Test header 2",
+            .lexemes = LexemeList.init(std.testing.allocator),
+            .current = 0,
+        };
+        defer state.lexemes.deinit();
+
+        try state.scanNewLine();
+
+        try std.testing.expectEqual(1, state.lexemes.items.len);
+        try std.testing.expectEqual(.header_2, state.lexemes.items[0].lexeme_type);
+        try std.testing.expectEqualStrings("##", state.lexemes.items[0].value);
+        try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(2, state.start);
+        try std.testing.expectEqual(2, state.current);
+        try std.testing.expectEqual(1, state.line);
+    }
+
+    test "scanNewLine Header 3" {
+        var state = LexerState{
+            .markdown = "### Test header 3",
+            .lexemes = LexemeList.init(std.testing.allocator),
+            .current = 0,
+        };
+        defer state.lexemes.deinit();
+
+        try state.scanNewLine();
+
+        try std.testing.expectEqual(1, state.lexemes.items.len);
+        try std.testing.expectEqual(.header_3, state.lexemes.items[0].lexeme_type);
+        try std.testing.expectEqualStrings("###", state.lexemes.items[0].value);
+        try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(3, state.start);
+        try std.testing.expectEqual(3, state.current);
+        try std.testing.expectEqual(1, state.line);
+    }
+
+    test "scanNewLine Header 4" {
+        var state = LexerState{
+            .markdown = "#### Test header 4",
+            .lexemes = LexemeList.init(std.testing.allocator),
+            .current = 0,
+        };
+        defer state.lexemes.deinit();
+
+        try state.scanNewLine();
+
+        try std.testing.expectEqual(1, state.lexemes.items.len);
+        try std.testing.expectEqual(.header_4, state.lexemes.items[0].lexeme_type);
+        try std.testing.expectEqualStrings("####", state.lexemes.items[0].value);
+        try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(4, state.start);
+        try std.testing.expectEqual(4, state.current);
+        try std.testing.expectEqual(1, state.line);
+    }
+
+    test "scanNewLine Header 5" {
+        var state = LexerState{
+            .markdown = "##### Test header 5",
+            .lexemes = LexemeList.init(std.testing.allocator),
+            .current = 0,
+        };
+        defer state.lexemes.deinit();
+
+        try state.scanNewLine();
+
+        try std.testing.expectEqual(1, state.lexemes.items.len);
+        try std.testing.expectEqual(.header_5, state.lexemes.items[0].lexeme_type);
+        try std.testing.expectEqualStrings("#####", state.lexemes.items[0].value);
+        try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(5, state.start);
+        try std.testing.expectEqual(5, state.current);
+        try std.testing.expectEqual(1, state.line);
+    }
+
+    test "scanNewLine Header 6" {
+        var state = LexerState{
+            .markdown = "###### Test header 6",
+            .lexemes = LexemeList.init(std.testing.allocator),
+            .current = 0,
+        };
+        defer state.lexemes.deinit();
+
+        try state.scanNewLine();
+
+        try std.testing.expectEqual(1, state.lexemes.items.len);
+        try std.testing.expectEqual(.header_6, state.lexemes.items[0].lexeme_type);
+        try std.testing.expectEqualStrings("######", state.lexemes.items[0].value);
+        try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(6, state.start);
+        try std.testing.expectEqual(6, state.current);
+        try std.testing.expectEqual(1, state.line);
     }
 
     fn scanLexeme(state: *LexerState) !void {

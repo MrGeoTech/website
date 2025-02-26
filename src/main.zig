@@ -2,6 +2,7 @@ const builtin = @import("builtin");
 const std = @import("std");
 const zap = @import("zap");
 const lexer = @import("lexer.zig");
+const tokenizer = @import("tokenizer.zig");
 
 //const Router = @import("router.zig");
 const Allocator = std.mem.Allocator;
@@ -61,5 +62,6 @@ pub fn main() !void {
 }
 
 test "main" {
-    std.testing.refAllDeclsRecursive(@import("lexer.zig"));
+    std.testing.refAllDeclsRecursive(lexer);
+    std.testing.refAllDeclsRecursive(tokenizer);
 }
