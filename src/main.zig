@@ -10,7 +10,7 @@ const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 
 pub fn main() !void {
-    std.log.info("Setting up server...", .{});
+    std.log.info("Setting up server...{d}", .{@sizeOf(tokenizer.TokenList)});
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -20,20 +20,27 @@ pub fn main() !void {
     var docs_dir = try std.fs.cwd().openDir("docs", .{});
     defer docs_dir.close();
 
-    const markdown = try docs_dir.readFileAlloc(
-        allocator,
-        "test.md",
-        1024 * 1024,
-    );
-    defer allocator.free(markdown);
+    //const markdown = try docs_dir.readFileAlloc(
+    //    allocator,
+    //    "test.md",
+    //    1024 * 1024,
+    //);
+    //defer allocator.free(markdown);
 
+    //const lexemes = try lexer.process(allocator, markdown);
+    //defer lexemes.deinit();
+
+    const markdown = "## Test Header\nThat was a test header!";
     const lexemes = try lexer.process(allocator, markdown);
     defer lexemes.deinit();
 
+    const tokens = try tokenizer.tokenize(lexemes);
+    defer tokens.deinit(lexemes.allocator);
+
     const writer = std.io.getStdOut().writer();
-    for (lexemes.items) |lexeme| {
+    for (tokens.tokens) |token| {
         //if (lexeme.line < 77 or lexeme.line > 90) continue;
-        try lexeme.write(writer);
+        try token.write(writer);
         try writer.writeByte('\n');
     }
 
