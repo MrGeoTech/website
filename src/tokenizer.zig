@@ -49,6 +49,26 @@ pub const TokenType = enum {
     pub fn isNewLine(self: TokenType) bool {
         return self != .newline and self != .forced_newline;
     }
+
+    // I know testing such simple functions could be considered bad styling but I
+    // want 100% test coverage so I can talk about it in interviews so they are staying
+    test "isEscapeable" {
+        for (std.meta.tags(TokenType)) |tag| {
+            if (tag == .text or tag == .newline or tag == .forced_newline)
+                try std.testing.expect(!tag.isEscapeable())
+            else
+                try std.testing.expect(tag.isEscapeable());
+        }
+    }
+
+    test "isNewLine" {
+        for (std.meta.tags(TokenType)) |tag| {
+            if (tag == .newline or tag == .forced_newline)
+                try std.testing.expect(!tag.isNewLine())
+            else
+                try std.testing.expect(tag.isNewLine());
+        }
+    }
 };
 
 pub const Token = struct {
