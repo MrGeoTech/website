@@ -10,7 +10,7 @@ const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 
 pub fn main() !void {
-    std.log.info("Setting up server...{d}", .{@sizeOf(tokenizer.TokenList)});
+    std.log.info("Setting up server...", .{});
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();

@@ -27,7 +27,7 @@ pub const TokenList = struct {
 const eql = std.mem.eql;
 const assert = std.debug.assert;
 
-pub const TokenType = enum(u31) {
+pub const TokenType = enum {
     escape,
     indent,
     text,
@@ -76,9 +76,9 @@ pub const TokenType = enum(u31) {
     }
 };
 
-pub const Token = packed struct {
+pub const Token = struct {
     token_type: TokenType,
-    value: union(enum(u1)) {
+    value: union(enum) {
         lexeme: []const u8,
         children: TokenList,
     },
@@ -245,6 +245,11 @@ const TokenizerState = struct {
                 try self.addCombineChildren(); // Add text
                 try self.addHeader();
             },
+            .newline, .forced_newline => {
+                try self.addCombineChildren(); // Add Text
+                self.current += 1;
+                try self.addCombineChildren(); // Add newline/forced newline
+            },
             else => self.current += 1,
         }
     }
@@ -274,6 +279,8 @@ const TokenizerState = struct {
                 .line = lexeme_type.line,
             }});
         }
+
+        self.start = self.current;
     }
 
     fn addWithChildren(self: *TokenizerState) error{OutOfMemory}!void {
@@ -293,6 +300,8 @@ const TokenizerState = struct {
             .value = .{ .children = children },
             .line = self.lexemes[self.start].line,
         }});
+
+        self.start = self.current;
     }
 
     fn addHeader(self: *TokenizerState) error{OutOfMemory}!void {
@@ -322,4 +331,15 @@ pub fn tokenize(lexemes: LexemeList) error{OutOfMemory}!TokenList {
     if (state.start != state.current) try state.addCombineChildren();
 
     return state.tokens;
+}
+
+test "tokenize" {
+    const markdown = "## Test Header\nThat was a test header!";
+    const lexemes = try lexer.process(std.testing.allocator, markdown);
+    defer lexemes.deinit();
+
+    const tokens = try tokenize(lexemes);
+    defer tokens.deinit(lexemes.allocator);
+
+    try std.testing.expectEqual(3, tokens.tokens.len);
 }
