@@ -30,16 +30,25 @@ pub fn main() !void {
     //const lexemes = try lexer.process(allocator, markdown);
     //defer lexemes.deinit();
 
-    const markdown = "## Test Header\nThat was a test header!";
+    // Make the markdown mutable
+    const markdown_const = "## Test Header\nThat was a **test header**!\n**test\n\ntest  \ntesting";
+    var buffer: [1024]u8 = undefined;
+    @memcpy(buffer[0..markdown_const.len], markdown_const);
+    const markdown: []u8 = buffer[0..markdown_const.len];
+
     const lexemes = try lexer.process(allocator, markdown);
     defer lexemes.deinit();
+
+    const writer = std.io.getStdOut().writer();
+    for (lexemes.items) |lexeme| {
+        try lexeme.write(writer);
+        try writer.writeByte('\n');
+    }
 
     const tokens = try tokenizer.tokenize(lexemes);
     defer tokens.deinit(lexemes.allocator);
 
-    const writer = std.io.getStdOut().writer();
     for (tokens.tokens) |token| {
-        //if (lexeme.line < 77 or lexeme.line > 90) continue;
         try token.write(writer);
         try writer.writeByte('\n');
     }

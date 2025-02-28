@@ -8,7 +8,7 @@ const assert = std.debug.assert;
 
 pub const Lexeme = struct {
     lexeme_type: TokenType,
-    value: []const u8,
+    value: []u8,
     line: usize,
 
     pub fn write(self: Lexeme, writer: anytype) @TypeOf(writer).Error!void {
@@ -47,7 +47,7 @@ pub const Lexeme = struct {
 };
 
 const LexerState = struct {
-    markdown: []const u8,
+    markdown: []u8,
     lexemes: LexemeList,
     start: usize = 0,
     current: usize = 0,
@@ -1374,7 +1374,7 @@ const LexerState = struct {
     }
 };
 
-pub fn process(allocator: std.mem.Allocator, markdown: []const u8) error{ OutOfMemory, InvalidHeader }!LexemeList {
+pub fn process(allocator: std.mem.Allocator, markdown: []u8) error{ OutOfMemory, InvalidHeader }!LexemeList {
     var state = LexerState{
         .markdown = markdown,
         .lexemes = LexemeList.init(allocator),

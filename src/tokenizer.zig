@@ -231,7 +231,7 @@ pub const Token = struct {
 
 const TokenizerState = struct {
     allocator: Allocator,
-    lexemes: []const lexer.Lexeme,
+    lexemes: []lexer.Lexeme,
     tokens: TokenList,
     start: usize = 0,
     current: usize = 0,
@@ -242,32 +242,77 @@ const TokenizerState = struct {
 
         switch (lexeme.lexeme_type) {
             .header_1, .header_2, .header_3, .header_4, .header_5, .header_6 => {
-                try self.addCombineChildren(); // Add text
+                try self.addCombineChildren(true); // Add Text
                 try self.addHeader();
             },
-            .newline, .forced_newline => {
-                try self.addCombineChildren(); // Add Text
-                self.current += 1;
-                try self.addCombineChildren(); // Add newline/forced newline
+            .bold => {
+                var offset: usize = 1;
+                if (self.current + 1 >= self.lexemes.len or
+                    self.lexemes[self.current + 1].lexeme_type.isNewLine())
+                {
+                    self.lexemes[self.start].lexeme_type = .text;
+                    self.current += 1;
+                    return;
+                }
+
+                while (self.lexemes[self.current + offset].lexeme_type != lexeme.lexeme_type) {
+                    offset += 1;
+                    // If we reach the end and no match has been found, treat it like text
+                    if (self.current + offset >= self.lexemes.len or
+                        self.lexemes[self.current].lexeme_type.isNewLine())
+                    {
+                        self.lexemes[self.start].lexeme_type = .text;
+                        self.current += 1;
+                        return;
+                    }
+                }
+                try self.addCombineChildren(true); // Add Text
+
+                self.current += offset;
+
+                try self.addWithChildren();
+                self.start += 1;
+            },
+            .newline => {
+                if (self.current + 1 < self.lexemes.len and self.lexemes[self.current + 1].lexeme_type == .newline) {
+                    try self.addCombineChildren(true); // Add Text
+                    self.current += 2;
+                    try self.addCombineChildren(true); // Add Forced New Line
+                    self.tokens.tokens[self.tokens.tokens.len - 1].token_type = .forced_newline;
+                } else {
+                    // If it is just a single newline, then we have to treat it like a space
+                    // To do this, we just set the newline character to a space character
+                    self.lexemes[self.current].value[0] = ' ';
+                    self.current += 1;
+                }
+            },
+            .forced_newline => {
+                try self.addCombineChildren(true); // Add Text
+                try self.addCurrent(); // Add Forced New Line
             },
             else => self.current += 1,
         }
     }
 
-    fn addCombineChildren(self: *TokenizerState) error{OutOfMemory}!void {
+    fn addCombineChildren(self: *TokenizerState, inclusive: bool) error{OutOfMemory}!void {
+        const inclusive_int: u1 = @intFromBool(!inclusive);
+        const should_ignore_start = eql(u8, self.lexemes[self.start + inclusive_int].value, " ");
+        const should_ignore_start_int = @intFromBool(should_ignore_start);
+        const new_start = self.start + inclusive_int + should_ignore_start_int;
+
         if (self.current > self.lexemes.len) return;
-        if (self.start + 1 >= self.current) return;
+        if (new_start >= self.current) return;
 
         const lexeme_type = self.lexemes[self.start];
 
-        if (self.start + 1 == self.current) {
+        if (new_start == self.current) {
             try self.tokens.append(self.allocator, &.{.{
                 .token_type = lexeme_type.lexeme_type,
                 .value = .{ .lexeme = lexeme_type.value[lexeme_type.value.len..] },
                 .line = lexeme_type.line,
             }});
         } else {
-            const lexeme_start = self.lexemes[self.start + 1].value;
+            const lexeme_start = self.lexemes[new_start].value;
             const lexeme_end = self.lexemes[self.current - 1].value;
 
             const ptr_start: usize = @intFromPtr(lexeme_start.ptr);
@@ -286,14 +331,17 @@ const TokenizerState = struct {
     fn addWithChildren(self: *TokenizerState) error{OutOfMemory}!void {
         if (self.current > self.lexemes.len) return;
         if (self.start + 1 >= self.current) return;
-        var children = TokenList{
-            .tokens = try self.allocator.alloc(Token, self.current - (self.start + 1)),
-        };
-        errdefer children.deinit(self.allocator);
 
-        for (self.lexemes[self.start + 1 .. self.current], 0..) |lexeme, i| {
-            children.tokens[i] = Token.of(lexeme);
-        }
+        const capacity = self.current - self.start + 1;
+
+        const lexemes = LexemeList{
+            .allocator = self.allocator,
+            .items = self.lexemes[],
+            .capacity = capacity,
+        };
+
+        const children = try tokenize(lexemes);
+        errdefer children.deinit(self.allocator);
 
         try self.tokens.append(self.allocator, &.{.{
             .token_type = self.lexemes[self.start].lexeme_type,
@@ -302,6 +350,12 @@ const TokenizerState = struct {
         }});
 
         self.start = self.current;
+    }
+
+    fn addCurrent(self: *TokenizerState) error{OutOfMemory}!void {
+        try self.tokens.append(self.allocator, &.{Token.of(self.lexemes[self.current])});
+        self.current += 1;
+        self.start += 1;
     }
 
     fn addHeader(self: *TokenizerState) error{OutOfMemory}!void {
@@ -313,7 +367,8 @@ const TokenizerState = struct {
             !self.lexemes[self.current].lexeme_type.isNewLine())
             self.current += 1;
 
-        return self.addCombineChildren();
+        defer self.start += 1;
+        return self.addCombineChildren(false);
     }
 };
 
@@ -328,7 +383,7 @@ pub fn tokenize(lexemes: LexemeList) error{OutOfMemory}!TokenList {
         try state.addNextToken();
     }
 
-    if (state.start != state.current) try state.addCombineChildren();
+    if (state.start != state.current) try state.addCombineChildren(true);
 
     return state.tokens;
 }
