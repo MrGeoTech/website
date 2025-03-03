@@ -20,30 +20,23 @@ pub fn main() !void {
     var docs_dir = try std.fs.cwd().openDir("docs", .{});
     defer docs_dir.close();
 
-    //const markdown = try docs_dir.readFileAlloc(
-    //    allocator,
-    //    "test.md",
-    //    1024 * 1024,
-    //);
-    //defer allocator.free(markdown);
+    const markdown = try docs_dir.readFileAlloc(
+        allocator,
+        "test.md",
+        1024 * 1024,
+    );
+    defer allocator.free(markdown);
 
-    //const lexemes = try lexer.process(allocator, markdown);
-    //defer lexemes.deinit();
-
-    // Make the markdown mutable
-    const markdown_const = "## Test Header\nThat was a **test header**!\n**test\n\ntest  \ntesting";
-    var buffer: [1024]u8 = undefined;
-    @memcpy(buffer[0..markdown_const.len], markdown_const);
-    const markdown: []u8 = buffer[0..markdown_const.len];
+    //const markdown = "## Test Header\nThat was a **test header**.\n**test\n\ntest  \ntesting";
 
     const lexemes = try lexer.process(allocator, markdown);
     defer lexemes.deinit();
 
     const writer = std.io.getStdOut().writer();
-    for (lexemes.items) |lexeme| {
-        try lexeme.write(writer);
-        try writer.writeByte('\n');
-    }
+    //for (lexemes.items) |lexeme| {
+    //    try lexeme.write(writer);
+    //    try writer.writeByte('\n');
+    //}
 
     const tokens = try tokenizer.tokenize(lexemes);
     defer tokens.deinit(lexemes.allocator);
