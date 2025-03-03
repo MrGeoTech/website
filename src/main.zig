@@ -4,6 +4,8 @@ const zap = @import("zap");
 const lexer = @import("lexer.zig");
 const tokenizer = @import("tokenizer.zig");
 
+const ns_per_us = std.time.ns_per_us;
+
 //const Router = @import("router.zig");
 const Allocator = std.mem.Allocator;
 
@@ -22,29 +24,36 @@ pub fn main() !void {
 
     const markdown = try docs_dir.readFileAlloc(
         allocator,
-        "test.md",
+        "School/ECE 111: Intro to ECE/EX02.md",
         1024 * 1024,
     );
     defer allocator.free(markdown);
 
     //const markdown = "## Test Header\nThat was a **test header**.\n**test\n\ntest  \ntesting";
 
+    var timer = try std.time.Timer.start();
     const lexemes = try lexer.process(allocator, markdown);
     defer lexemes.deinit();
+    const lexer_time = timer.read() / ns_per_us;
 
     const writer = std.io.getStdOut().writer();
-    //for (lexemes.items) |lexeme| {
-    //    try lexeme.write(writer);
-    //    try writer.writeByte('\n');
-    //}
+    for (lexemes.items) |lexeme| {
+        try lexeme.write(writer);
+        try writer.writeByte('\n');
+    }
 
+    timer.reset();
     const tokens = try tokenizer.tokenize(lexemes);
     defer tokens.deinit(lexemes.allocator);
+    const tokenize_time = timer.read() / ns_per_us;
 
     for (tokens.tokens) |token| {
         try token.write(writer);
         try writer.writeByte('\n');
     }
+
+    std.log.info("Lexer Time: {d} us", .{lexer_time});
+    std.log.info("Tokenize Time: {d} us", .{tokenize_time});
 
     //var router = try Router.init(allocator);
     //defer router.deinit();

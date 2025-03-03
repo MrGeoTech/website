@@ -112,6 +112,7 @@ const LexerState = struct {
                 try state.addLexeme(.unordered_list);
             },
             '-', '*' => {
+                if (state.current + 1 > state.markdown.len) return;
                 // Check if it is an unordered list
                 if (state.markdown[state.current + 1] == ' ') {
                     state.current += 1;
@@ -120,28 +121,38 @@ const LexerState = struct {
                 }
                 if (state.markdown[state.current + 1] != char) return;
 
-                // Return if the code block doesn't start the the start of the line
+                // Return if the horizontal rule doesn't start the the start of the line
                 if (state.current > 0 and state.markdown[state.current - 1] != '\n') return;
 
-                while (state.current < state.markdown.len and
-                    state.markdown[state.current] == char) state.current += 1;
+                var count: usize = 1;
+                while (state.current + count < state.markdown.len and
+                    state.markdown[state.current + count] == char) count += 1;
 
-                if (state.current - state.start >= 3)
-                    try state.addLexeme(.horizontal_rule)
-                else
-                    state.current = state.start;
+                if (state.current + count < state.markdown.len and
+                    state.markdown[state.current + count] != '\n')
+                    return;
+
+                if (count >= 3) {
+                    state.current += count;
+                    try state.addLexeme(.horizontal_rule);
+                }
             },
             '_' => {
-                // Return if the code block doesn't start the the start of the line
+                // Return if the horizontal rule doesn't start the the start of the line
                 if (state.current > 0 and state.markdown[state.current - 1] != '\n') return;
 
-                while (state.current < state.markdown.len and
-                    state.markdown[state.current] == char) state.current += 1;
+                var count: usize = 1;
+                while (state.current + count < state.markdown.len and
+                    state.markdown[state.current + count] == char) count += 1;
 
-                if (state.current - state.start >= 3)
-                    try state.addLexeme(.horizontal_rule)
-                else
-                    state.current = state.start;
+                if (state.current + count < state.markdown.len and
+                    state.markdown[state.current + count] != '\n')
+                    return;
+
+                if (count >= 3) {
+                    state.current += count;
+                    try state.addLexeme(.horizontal_rule);
+                }
             },
             '`' => {
                 // Return if the code block doesn't start the the start of the line
@@ -192,7 +203,9 @@ const LexerState = struct {
             },
             '*', '_' => {
                 try state.addLexeme(.text);
-                if (state.matches(2))
+                if (state.matches(3))
+                    try state.addLexeme(.bold_italic)
+                else if (state.matches(2))
                     try state.addLexeme(.bold)
                 else if (state.matches(1)) // Will always return true but increments current
                     try state.addLexeme(.italic);
@@ -211,7 +224,7 @@ const LexerState = struct {
             '`' => {
                 try state.addLexeme(.text);
                 if (state.matches(2))
-                    try state.addLexeme(.escape_backticks)
+                    try state.addLexeme(.code_escaped)
                 else if (state.matches(1))
                     try state.addLexeme(.code);
             },
@@ -256,6 +269,11 @@ const LexerState = struct {
                 try state.addLexeme(.newline);
                 state.line += 1;
                 try state.scanNewLine();
+            },
+            '\\' => {
+                try state.addLexeme(.text);
+                state.current += 1;
+                try state.addLexeme(.escape);
             },
             else => state.current += 1,
         }
@@ -810,6 +828,21 @@ const LexerState = struct {
         try std.testing.expectEqual(1, state.line);
     }
 
+    test "scanNewLine '-' Not Horizontal Rule Text After" {
+        var state = LexerState{
+            .markdown = "---test",
+            .lexemes = LexemeList.init(std.testing.allocator),
+        };
+        defer state.lexemes.deinit();
+
+        try state.scanNewLine();
+
+        try std.testing.expectEqual(0, state.lexemes.items.len);
+        try std.testing.expectEqual(0, state.start);
+        try std.testing.expectEqual(0, state.current);
+        try std.testing.expectEqual(1, state.line);
+    }
+
     test "scanNewLine '-' Horizontal Rule Minimum" {
         var state = LexerState{
             .markdown = "---",
@@ -849,6 +882,21 @@ const LexerState = struct {
     test "scanNewLine '*' Not Horizontal Rule" {
         var state = LexerState{
             .markdown = "**",
+            .lexemes = LexemeList.init(std.testing.allocator),
+        };
+        defer state.lexemes.deinit();
+
+        try state.scanNewLine();
+
+        try std.testing.expectEqual(0, state.lexemes.items.len);
+        try std.testing.expectEqual(0, state.start);
+        try std.testing.expectEqual(0, state.current);
+        try std.testing.expectEqual(1, state.line);
+    }
+
+    test "scanNewLine '*' Not Horizontal Rule Text After" {
+        var state = LexerState{
+            .markdown = "***test",
             .lexemes = LexemeList.init(std.testing.allocator),
         };
         defer state.lexemes.deinit();
@@ -927,6 +975,21 @@ const LexerState = struct {
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
         try std.testing.expectEqual(3, state.start);
         try std.testing.expectEqual(3, state.current);
+        try std.testing.expectEqual(1, state.line);
+    }
+
+    test "scanNewLine '_' Not Horizontal Rule Text After" {
+        var state = LexerState{
+            .markdown = "___test",
+            .lexemes = LexemeList.init(std.testing.allocator),
+        };
+        defer state.lexemes.deinit();
+
+        try state.scanNewLine();
+
+        try std.testing.expectEqual(0, state.lexemes.items.len);
+        try std.testing.expectEqual(0, state.start);
+        try std.testing.expectEqual(0, state.current);
         try std.testing.expectEqual(1, state.line);
     }
 
@@ -1238,7 +1301,7 @@ const LexerState = struct {
         try std.testing.expectEqual(1, state.line);
     }
 
-    test "scanLexeme Escape Backticks" {
+    test "scanLexeme Code Escaped" {
         var state = LexerState{
             .markdown = "`````",
             .lexemes = LexemeList.init(std.testing.allocator),
@@ -1248,7 +1311,7 @@ const LexerState = struct {
         try state.scanLexeme();
 
         try std.testing.expectEqual(1, state.lexemes.items.len);
-        try std.testing.expectEqual(.escape_backticks, state.lexemes.items[0].lexeme_type);
+        try std.testing.expectEqual(.code_escaped, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("``", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
         try std.testing.expectEqual(2, state.start);

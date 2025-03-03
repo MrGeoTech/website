@@ -28,6 +28,10 @@ pub const TokenList = struct {
         @memcpy(self.tokens[old_len..], tokens);
     }
 
+    pub fn removeLast(self: *TokenList, allocator: Allocator) error{OutOfMemory}!void {
+        self.tokens = try allocator.realloc(self.tokens, self.tokens.len - 1);
+    }
+
     pub fn deinit(self: TokenList, allocator: Allocator) void {
         for (self.tokens) |token| {
             switch (token.value) {
@@ -50,6 +54,7 @@ pub const TokenType = enum {
     text,
     newline,
     forced_newline,
+    metadata,
     html,
     html_start,
     html_end,
@@ -62,13 +67,16 @@ pub const TokenType = enum {
     blockquote,
     bold,
     italic,
+    bold_italic,
     ordered_list,
     unordered_list,
     list_item,
-    escape_backticks,
     code,
+    code_escaped,
     code_block,
     code_lang,
+    math,
+    math_block,
     horizontal_rule,
     link,
     image,
@@ -90,6 +98,10 @@ pub const TokenType = enum {
     pub fn isHeader(self: TokenType) bool {
         return self == .header_1 or self == .header_2 or self == .header_3 or
             self == .header_4 or self == .header_5 or self == .header_6;
+    }
+
+    pub fn isSpecialCharacter(self: TokenType) bool {
+        return self == .ampersand;
     }
 };
 
@@ -135,7 +147,7 @@ pub const Token = struct {
                 if (children.tokens.len < 1) break :blk "";
                 break :blk combineStrings(
                     children.tokens[0].getLexeme(),
-                    children[children.tokens.len - 1].getLexeme(),
+                    children.tokens[children.tokens.len - 1].getLexeme(),
                 );
             },
         };
@@ -258,7 +270,7 @@ pub const Token = struct {
 
         try children_token.write(output.writer());
 
-        try std.testing.expectEqualStrings("Token{token_type:text,value:\nToken{token_type:text,value:Hello,line:1}\nToken{token_type:text,value:World,line:1}\n,line:1}", output.items);
+        try std.testing.expectEqualStrings("Token{token_type:text,value:\n\tToken{token_type:text,value:Hello,line:1}\n\tToken{token_type:text,value:World,line:1}\n,line:1}", output.items);
     }
 };
 
@@ -274,11 +286,32 @@ const TokenizerState = struct {
 
         switch (lexeme.lexeme_type) {
             .header_1, .header_2, .header_3, .header_4, .header_5, .header_6 => try self.addHeader(),
-            .bold, .italic => try self.addSingleLine(),
+            .bold, .italic, .bold_italic => try self.addSingleLine(),
             .blockquote => try self.addBlockquote(),
             .ordered_list, .unordered_list => try self.addList(),
-            .code => try self.addExclusiveSingleLine(),
-            .code_block => try self.addBlock(),
+            .code, .code_escaped => try self.addSingleLineCombine(.code),
+            .code_block, .math_block => try self.addBlock(),
+            .indent => try self.addIndentCodeBlock(),
+            .math => try self.addSingleLineCombine(.math),
+            .alt_start => try self.addLink(),
+            .image_start => try self.addImage(),
+            .html_start => try self.addHtml(),
+            .horizontal_rule => {
+                if (lexeme.line == 1)
+                    try self.addMetadata()
+                else
+                    try self.addCurrent();
+            },
+            .escape => {
+                if (self.current + 1 < self.lexemes.len and
+                    self.lexemes[self.current + 1].lexeme_type.isEscapeable())
+                {
+                    self.current += 1;
+                    try self.addCurrentAs(.text);
+                } else {
+                    try self.addCurrentAs(.text);
+                }
+            },
             .newline => {
                 if (self.current + 1 < self.lexemes.len and self.lexemes[self.current + 1].lexeme_type == .newline) {
                     try self.addCombineChildren(.forced_newline, 2);
@@ -287,7 +320,7 @@ const TokenizerState = struct {
                 }
             },
             .forced_newline => try self.addCurrent(),
-            else => try self.addCurrent(),
+            else => try self.addCurrentAs(.text),
         }
     }
 
@@ -371,8 +404,7 @@ const TokenizerState = struct {
         self.current += 1;
     }
 
-    /// Functions the same as `addSingleLine` but all children are added
-    fn addExclusiveSingleLine(self: *TokenizerState) error{OutOfMemory}!void {
+    fn addSingleLineCombine(self: *TokenizerState, token_type: TokenType) error{OutOfMemory}!void {
         const lexeme = self.lexemes[self.current];
 
         var count: usize = 1;
@@ -389,12 +421,32 @@ const TokenizerState = struct {
         }
 
         self.current += 1;
-        try self.addCombineChildren(lexeme.lexeme_type, count - 1);
+        try self.addCombineChildren(token_type, count - 1);
         self.current += 1;
     }
 
+    fn addMetadata(self: *TokenizerState) error{OutOfMemory}!void {
+        assert(self.current < self.lexemes.len);
+        const start_lexeme = self.lexemes[self.current];
+        assert(start_lexeme.lexeme_type == .horizontal_rule);
+        assert(start_lexeme.line == 1);
+
+        if (self.current + 1 >= self.lexemes.len) return self.addCurrent();
+        self.current += 1;
+
+        var count: usize = 0;
+        while (self.lexemes[self.current + count].lexeme_type != .horizontal_rule) {
+            count += 1;
+            if (self.current + count >= self.lexemes.len) return self.addCurrent();
+        }
+
+        self.current += if (count > 0) 1 else 0;
+        try self.addCombineChildren(.metadata, count - 2);
+        self.current += 2;
+    }
+
     fn addHeader(self: *TokenizerState) error{OutOfMemory}!void {
-        assert(self.current <= self.lexemes.len);
+        assert(self.current < self.lexemes.len);
         assert(self.lexemes[self.current].lexeme_type.isHeader());
 
         const header_type = self.lexemes[self.current].lexeme_type;
@@ -498,14 +550,13 @@ const TokenizerState = struct {
             .line = start_lexeme.line,
         });
     }
-
     fn addBlock(self: *TokenizerState) TokenizeError!void {
         assert(self.current <= self.lexemes.len);
         const start_lexeme = self.lexemes[self.current];
         assert(start_lexeme.lexeme_type == .code_block);
 
         var children = TokenList{ .tokens = &.{} };
-        defer children.deinit(self.allocator);
+        errdefer children.deinit(self.allocator);
 
         self.current += 1;
 
@@ -516,11 +567,188 @@ const TokenizerState = struct {
             self.current += 1;
         }
 
-        var offset: usize = 0;
-        while (self.current + offset < self.lexemes.len and
-            self.lexemes[self.current + offset].lexeme_type != start_lexeme.lexeme_type)
-            offset += 1;
-        // TODO: Continue here
+        // Skip first newline
+        self.current += 1;
+        while (self.current < self.lexemes.len and
+            self.lexemes[self.current].lexeme_type != start_lexeme.lexeme_type)
+        {
+            const lexeme = self.lexemes[self.current];
+            try children.append(self.allocator, .{
+                .token_type = if (lexeme.lexeme_type.isSpecialCharacter())
+                    lexeme.lexeme_type
+                else
+                    .text,
+                .value = .{ .lexeme = lexeme.value },
+                .line = lexeme.line,
+            });
+
+            self.current += 1;
+        }
+
+        try children.removeLast(self.allocator);
+
+        try self.tokens.append(self.allocator, .{
+            .token_type = start_lexeme.lexeme_type,
+            .value = .{ .children = children },
+            .line = start_lexeme.line,
+        });
+
+        self.current += 1;
+    }
+
+    fn addIndentCodeBlock(self: *TokenizerState) !void {
+        assert(self.current <= self.lexemes.len);
+        assert(self.lexemes[self.current].lexeme_type == .indent);
+        const line = self.lexemes[self.current].line;
+
+        var children = TokenList{ .tokens = &.{} };
+        errdefer children.deinit(self.allocator);
+
+        self.current += 1;
+
+        var is_on_newline = false;
+        while (self.current < self.lexemes.len) {
+            const lexeme = self.lexemes[self.current];
+
+            if (lexeme.lexeme_type == .newline and
+                self.current + 1 < self.lexemes.len and
+                self.lexemes[self.current + 1].lexeme_type != .indent) break;
+
+            if (!(self.lexemes[self.current - 1].lexeme_type == .newline and lexeme.lexeme_type == .indent)) try children.append(self.allocator, .{
+                .token_type = if (lexeme.lexeme_type.isSpecialCharacter())
+                    lexeme.lexeme_type
+                else
+                    .text,
+                .value = .{ .lexeme = lexeme.value },
+                .line = lexeme.line,
+            });
+            is_on_newline = lexeme.lexeme_type.isNewLine();
+            self.current += 1;
+        }
+
+        try self.tokens.append(self.allocator, .{
+            .token_type = .code_block,
+            .value = .{ .children = children },
+            .line = line,
+        });
+    }
+
+    fn addLink(self: *TokenizerState) error{OutOfMemory}!void {
+        assert(self.current <= self.lexemes.len);
+        assert(self.lexemes[self.current].lexeme_type == .alt_start);
+
+        const line = self.lexemes[self.current].line;
+        const children = self.getLinkChildren() catch |err| switch (err) {
+            error.InvalidLink => return self.addCurrentAs(.text),
+            else => return error.OutOfMemory,
+        };
+
+        try self.tokens.append(self.allocator, .{
+            .token_type = .link,
+            .value = .{ .children = children },
+            .line = line,
+        });
+    }
+
+    fn addImage(self: *TokenizerState) error{OutOfMemory}!void {
+        assert(self.current <= self.lexemes.len);
+        assert(self.lexemes[self.current].lexeme_type == .image_start);
+
+        const line = self.lexemes[self.current].line;
+        if (self.current + 1 >= self.lexemes.len) return self.addCurrentAs(.text);
+        self.current += 1;
+
+        const children = self.getLinkChildren() catch |err| switch (err) {
+            error.InvalidLink => {
+                self.current -= 1;
+                return self.addCurrentAs(.text);
+            },
+            else => return error.OutOfMemory,
+        };
+
+        try self.tokens.append(self.allocator, .{
+            .token_type = .image,
+            .value = .{ .children = children },
+            .line = line,
+        });
+    }
+
+    fn getLinkChildren(self: *TokenizerState) error{ InvalidLink, OutOfMemory }!TokenList {
+        assert(self.current <= self.lexemes.len);
+        assert(self.lexemes[self.current].lexeme_type == .alt_start);
+        const line = self.lexemes[self.current].line;
+
+        var alt_len: usize = 0;
+        while (self.current + 1 + alt_len < self.lexemes.len and
+            self.lexemes[self.current + 1 + alt_len].lexeme_type != .alt_end)
+        {
+            if (self.lexemes[self.current + 1 + alt_len].lexeme_type.isNewLine())
+                return error.InvalidLink;
+
+            alt_len += 1;
+        }
+
+        if (self.lexemes[self.current + 1 + alt_len].lexeme_type != .alt_end or
+            (self.current + alt_len + 2 < self.lexemes.len and
+            self.lexemes[self.current + alt_len + 2].lexeme_type != .url_start))
+            return error.InvalidLink;
+
+        var url_len: usize = 0;
+        while (self.current + alt_len + 3 + url_len < self.lexemes.len and
+            self.lexemes[self.current + alt_len + 3 + url_len].lexeme_type != .url_end)
+        {
+            if (self.lexemes[self.current + 1 + alt_len].lexeme_type.isNewLine())
+                return error.InvalidLink;
+
+            url_len += 1;
+        }
+
+        if (url_len == 0 or
+            self.lexemes[self.current + alt_len + 3 + url_len].lexeme_type != .url_end or
+            std.mem.containsAtLeast(u8, combineStrings(
+            self.lexemes[self.current + alt_len + 3].value,
+            self.lexemes[self.current + alt_len + url_len + 2].value,
+        ), 1, " "))
+            return error.InvalidLink;
+
+        var children = TokenList{ .tokens = &.{} };
+        errdefer children.deinit(self.allocator);
+
+        try children.append(self.allocator, .{
+            .token_type = .text,
+            .value = .{ .lexeme = combineStrings(
+                self.lexemes[self.current + 1].value,
+                self.lexemes[self.current + 1 + alt_len - 1].value,
+            ) },
+            .line = line,
+        });
+        try children.append(self.allocator, .{
+            .token_type = .text,
+            .value = .{ .lexeme = combineStrings(
+                self.lexemes[self.current + 1 + alt_len + 2].value,
+                self.lexemes[self.current + 1 + alt_len + 2 + url_len - 1].value,
+            ) },
+            .line = line,
+        });
+
+        self.current += 1 + alt_len + 2 + url_len + 1;
+
+        return children;
+    }
+
+    fn addHtml(self: *TokenizerState) error{OutOfMemory}!void {
+        assert(self.current <= self.lexemes.len);
+        assert(self.lexemes[self.current].lexeme_type == .html_start);
+
+        var count: usize = 0;
+        while (self.current + count <= self.lexemes.len) {
+            const lexeme_type = self.lexemes[self.current + count].lexeme_type;
+            if (lexeme_type.isNewLine()) return self.addCurrentAs(.text);
+            if (lexeme_type == .html_end) break;
+            count += 1;
+        }
+
+        try self.addCombineChildren(.html, count + 1);
     }
 };
 
