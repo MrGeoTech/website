@@ -3,6 +3,7 @@ const std = @import("std");
 const zap = @import("zap");
 const lexer = @import("lexer.zig");
 const tokenizer = @import("tokenizer.zig");
+const compiler = @import("compiler.zig");
 
 const ns_per_us = std.time.ns_per_us;
 
@@ -24,7 +25,8 @@ pub fn main() !void {
 
     const markdown = try docs_dir.readFileAlloc(
         allocator,
-        "School/ECE 111: Intro to ECE/EX02.md",
+        "test.md",
+        //"School/ECE 111: Intro to ECE/EX02.md",
         1024 * 1024,
     );
     defer allocator.free(markdown);
@@ -52,8 +54,16 @@ pub fn main() !void {
         try writer.writeByte('\n');
     }
 
+    timer.reset();
+    const result = try compiler.compile(allocator, tokens);
+    defer allocator.free(result);
+    const compile_time = timer.read() / ns_per_us;
+
+    std.log.info("{s}", .{result});
+
     std.log.info("Lexer Time: {d} us", .{lexer_time});
     std.log.info("Tokenize Time: {d} us", .{tokenize_time});
+    std.log.info("Compile Time: {d} us", .{compile_time});
 
     //var router = try Router.init(allocator);
     //defer router.deinit();
