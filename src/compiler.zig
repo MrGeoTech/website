@@ -61,7 +61,7 @@ fn appendHtml(
 
     const lexeme = state.tokens[state.current].getLexeme();
     try appendLexeme(state, state.current < state.tokens.len and
-        lexeme.ptr[lexeme.len] == ' ');
+        (lexeme.ptr[lexeme.len] == ' ' or lexeme.ptr[lexeme.len] == '\n'));
     if (tags) |t| inline for (t) |tag| try state.html.appendSlice("</" ++ tag ++ ">");
     if (follow_with_newline and !should_compress) try appendNewline(state);
 }
