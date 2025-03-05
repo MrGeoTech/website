@@ -40,6 +40,7 @@ pub fn main() !void {
 
     const writer = std.io.getStdOut().writer();
     for (lexemes.items) |lexeme| {
+        if (lexeme.line != 276) continue;
         try lexeme.write(writer);
         try writer.writeByte('\n');
     }
@@ -50,6 +51,7 @@ pub fn main() !void {
     const tokenize_time = timer.read() / ns_per_us;
 
     for (tokens.tokens) |token| {
+        if (token.line != 276) continue;
         try token.write(writer);
         try writer.writeByte('\n');
     }
@@ -61,9 +63,12 @@ pub fn main() !void {
 
     std.log.info("{s}", .{result});
 
+    std.log.info("Total Bytes: {d} bytes", .{markdown.len});
     std.log.info("Lexer Time: {d} us", .{lexer_time});
     std.log.info("Tokenize Time: {d} us", .{tokenize_time});
     std.log.info("Compile Time: {d} us", .{compile_time});
+    std.log.info("Total Time: {d} us", .{lexer_time + tokenize_time + compile_time});
+    std.log.info("Total Time per Byte: {d} us", .{@as(f32, @floatFromInt(lexer_time + tokenize_time + compile_time)) / @as(f32, @floatFromInt(markdown.len))});
 
     //var router = try Router.init(allocator);
     //defer router.deinit();

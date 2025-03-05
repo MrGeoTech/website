@@ -86,6 +86,24 @@ pub fn build(b: *std.Build) !void {
 
     const coverage_step = b.step("coverage", "Run unit tests and generate a coverage report");
     coverage_step.dependOn(&test_with_coverage.step);
+
+    const run_with_perf = b.addSystemCommand(&.{ "perf", "record", "-g", "zig-out/bin/website" });
+    run_with_perf.step.dependOn(b.getInstallStep());
+
+    const perf_step = b.step(
+        "perf",
+        "Runs the webserver with `perf`. Follow with `perf report` to view the results",
+    );
+    perf_step.dependOn(&run_with_perf.step);
+
+    const run_with_perf_stat = b.addSystemCommand(&.{ "perf", "stat", "zig-out/bin/website" });
+    run_with_perf_stat.step.dependOn(b.getInstallStep());
+
+    const perf_stat_step = b.step(
+        "stat",
+        "Runs the webserver with `perf stat` which gives immedate but less information than `zig build perf`",
+    );
+    perf_stat_step.dependOn(&run_with_perf_stat.step);
 }
 
 const PrintOutputLocation = struct {

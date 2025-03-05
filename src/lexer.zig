@@ -10,6 +10,7 @@ pub const Lexeme = struct {
     lexeme_type: TokenType,
     value: []const u8,
     line: usize,
+    has_following_space: bool,
 
     pub fn write(self: Lexeme, writer: anytype) @TypeOf(writer).Error!void {
         try writer.writeAll("Lexeme{lexeme_type:");
@@ -27,7 +28,7 @@ pub const Lexeme = struct {
         }
         try writer.writeAll(",line:");
         try std.fmt.formatInt(self.line, 10, .lower, .{}, writer);
-        try writer.writeByte('}');
+        try writer.print(",has_following_space:{}}}", .{self.has_following_space});
     }
 
     test "write" {
@@ -35,6 +36,7 @@ pub const Lexeme = struct {
             .lexeme_type = .text,
             .value = "Hello World",
             .line = 1,
+            .has_following_space = false,
         };
 
         var output = std.ArrayList(u8).init(std.testing.allocator);
@@ -42,7 +44,7 @@ pub const Lexeme = struct {
 
         try lexeme.write(output.writer());
 
-        try std.testing.expectEqualStrings("Lexeme{lexeme_type:text,value:Hello World,line:1}", output.items);
+        try std.testing.expectEqualStrings("Lexeme{lexeme_type:text,value:Hello World,line:1,has_following_space:false}", output.items);
     }
 };
 
@@ -283,10 +285,16 @@ const LexerState = struct {
         if (state.current > state.markdown.len) return;
         if (state.start >= state.current) return;
 
+        const has_following_space = if (state.current < state.markdown.len) blk: {
+            const char = state.markdown[state.current];
+            break :blk char == ' ' or char == '\n' or char == '\t' or char == '\r';
+        } else false;
+
         try state.lexemes.append(.{
             .lexeme_type = lexeme_type,
             .value = state.markdown[state.start..state.current],
             .line = state.line,
+            .has_following_space = has_following_space,
         });
         state.start = state.current;
     }
@@ -345,6 +353,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.header_1, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("#", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(2, state.start);
         try std.testing.expectEqual(2, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -363,9 +372,11 @@ const LexerState = struct {
         try std.testing.expectEqual(.escape, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("\\", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(.header_1, state.lexemes.items[1].lexeme_type);
         try std.testing.expectEqualStrings("#", state.lexemes.items[1].value);
         try std.testing.expectEqual(1, state.lexemes.items[1].line);
+        try std.testing.expectEqual(true, state.lexemes.items[1].has_following_space);
         try std.testing.expectEqual(2, state.start);
         try std.testing.expectEqual(2, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -384,9 +395,11 @@ const LexerState = struct {
         try std.testing.expectEqual(.indent, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("    ", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(.header_1, state.lexemes.items[1].lexeme_type);
         try std.testing.expectEqualStrings("#", state.lexemes.items[1].value);
         try std.testing.expectEqual(1, state.lexemes.items[1].line);
+        try std.testing.expectEqual(true, state.lexemes.items[1].has_following_space);
         try std.testing.expectEqual(5, state.start);
         try std.testing.expectEqual(5, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -405,12 +418,15 @@ const LexerState = struct {
         try std.testing.expectEqual(.indent, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("    ", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(.indent, state.lexemes.items[1].lexeme_type);
         try std.testing.expectEqualStrings("    ", state.lexemes.items[1].value);
         try std.testing.expectEqual(1, state.lexemes.items[1].line);
+        try std.testing.expectEqual(false, state.lexemes.items[1].has_following_space);
         try std.testing.expectEqual(.header_1, state.lexemes.items[2].lexeme_type);
         try std.testing.expectEqualStrings("#", state.lexemes.items[2].value);
         try std.testing.expectEqual(1, state.lexemes.items[2].line);
+        try std.testing.expectEqual(true, state.lexemes.items[2].has_following_space);
         try std.testing.expectEqual(9, state.start);
         try std.testing.expectEqual(9, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -429,9 +445,11 @@ const LexerState = struct {
         try std.testing.expectEqual(.indent, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("\t", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(.header_1, state.lexemes.items[1].lexeme_type);
         try std.testing.expectEqualStrings("#", state.lexemes.items[1].value);
         try std.testing.expectEqual(1, state.lexemes.items[1].line);
+        try std.testing.expectEqual(true, state.lexemes.items[1].has_following_space);
         try std.testing.expectEqual(2, state.start);
         try std.testing.expectEqual(2, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -450,12 +468,15 @@ const LexerState = struct {
         try std.testing.expectEqual(.indent, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("\t", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(.indent, state.lexemes.items[1].lexeme_type);
         try std.testing.expectEqualStrings("\t", state.lexemes.items[1].value);
         try std.testing.expectEqual(1, state.lexemes.items[1].line);
+        try std.testing.expectEqual(false, state.lexemes.items[1].has_following_space);
         try std.testing.expectEqual(.header_1, state.lexemes.items[2].lexeme_type);
         try std.testing.expectEqualStrings("#", state.lexemes.items[2].value);
         try std.testing.expectEqual(1, state.lexemes.items[2].line);
+        try std.testing.expectEqual(true, state.lexemes.items[2].has_following_space);
         try std.testing.expectEqual(3, state.start);
         try std.testing.expectEqual(3, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -474,6 +495,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.header_1, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("#", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(1, state.start);
         try std.testing.expectEqual(1, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -492,6 +514,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.header_1, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("#", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(1, state.start);
         try std.testing.expectEqual(1, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -510,6 +533,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.header_2, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("##", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(2, state.start);
         try std.testing.expectEqual(2, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -528,6 +552,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.header_3, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("###", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(3, state.start);
         try std.testing.expectEqual(3, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -546,6 +571,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.header_4, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("####", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(4, state.start);
         try std.testing.expectEqual(4, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -564,6 +590,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.header_5, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("#####", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(5, state.start);
         try std.testing.expectEqual(5, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -582,6 +609,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.header_6, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("######", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(6, state.start);
         try std.testing.expectEqual(6, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -613,6 +641,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.blockquote, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings(">", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(2, state.start);
         try std.testing.expectEqual(2, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -631,12 +660,15 @@ const LexerState = struct {
         try std.testing.expectEqual(.blockquote, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings(">", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(.blockquote, state.lexemes.items[1].lexeme_type);
         try std.testing.expectEqualStrings(">", state.lexemes.items[1].value);
         try std.testing.expectEqual(1, state.lexemes.items[1].line);
+        try std.testing.expectEqual(false, state.lexemes.items[1].has_following_space);
         try std.testing.expectEqual(.blockquote, state.lexemes.items[2].lexeme_type);
         try std.testing.expectEqualStrings(">", state.lexemes.items[2].value);
         try std.testing.expectEqual(1, state.lexemes.items[2].line);
+        try std.testing.expectEqual(true, state.lexemes.items[2].has_following_space);
         try std.testing.expectEqual(4, state.start);
         try std.testing.expectEqual(4, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -655,6 +687,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.ordered_list, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("3823.", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(5, state.start);
         try std.testing.expectEqual(5, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -703,6 +736,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.unordered_list, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("-", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(1, state.start);
         try std.testing.expectEqual(1, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -736,6 +770,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.unordered_list, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("*", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(1, state.start);
         try std.testing.expectEqual(1, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -769,6 +804,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.unordered_list, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("+", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(1, state.start);
         try std.testing.expectEqual(1, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -786,6 +822,7 @@ const LexerState = struct {
         try std.testing.expectEqual(1, state.lexemes.items.len);
         try std.testing.expectEqual(.code_block, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("```", state.lexemes.items[0].value);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
         try std.testing.expectEqual(3, state.start);
         try std.testing.expectEqual(3, state.current);
@@ -805,9 +842,11 @@ const LexerState = struct {
         try std.testing.expectEqual(.code_block, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("```", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(.code_lang, state.lexemes.items[1].lexeme_type);
         try std.testing.expectEqualStrings("zig", state.lexemes.items[1].value);
         try std.testing.expectEqual(1, state.lexemes.items[1].line);
+        try std.testing.expectEqual(false, state.lexemes.items[1].has_following_space);
         try std.testing.expectEqual(6, state.start);
         try std.testing.expectEqual(6, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -856,6 +895,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.horizontal_rule, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("---", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(3, state.start);
         try std.testing.expectEqual(3, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -874,6 +914,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.horizontal_rule, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("---------------", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(15, state.start);
         try std.testing.expectEqual(15, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -922,6 +963,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.horizontal_rule, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("***", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(3, state.start);
         try std.testing.expectEqual(3, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -940,6 +982,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.horizontal_rule, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("***************", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(15, state.start);
         try std.testing.expectEqual(15, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -973,6 +1016,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.horizontal_rule, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("___", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(3, state.start);
         try std.testing.expectEqual(3, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1006,6 +1050,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.horizontal_rule, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("_______________", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(15, state.start);
         try std.testing.expectEqual(15, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1040,6 +1085,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.text, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("test", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(5, state.start);
         try std.testing.expectEqual(5, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1059,6 +1105,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.text, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("test", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(5, state.start);
         try std.testing.expectEqual(5, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1078,6 +1125,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.text, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("test", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(5, state.start);
         try std.testing.expectEqual(5, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1097,9 +1145,11 @@ const LexerState = struct {
         try std.testing.expectEqual(.text, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("test", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(.newline, state.lexemes.items[1].lexeme_type);
         try std.testing.expectEqualStrings("\n", state.lexemes.items[1].value);
         try std.testing.expectEqual(1, state.lexemes.items[1].line);
+        try std.testing.expectEqual(false, state.lexemes.items[1].has_following_space);
         try std.testing.expectEqual(5, state.start);
         try std.testing.expectEqual(5, state.current);
         try std.testing.expectEqual(2, state.line);
@@ -1120,6 +1170,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.html_start, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("<", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(6, state.start);
         try std.testing.expectEqual(6, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1140,6 +1191,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.html_end, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings(">", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(11, state.start);
         try std.testing.expectEqual(11, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1158,6 +1210,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.italic, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("*", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(1, state.start);
         try std.testing.expectEqual(1, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1176,6 +1229,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.italic, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("_", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(1, state.start);
         try std.testing.expectEqual(1, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1194,6 +1248,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.bold, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("**", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(2, state.start);
         try std.testing.expectEqual(2, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1212,6 +1267,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.bold, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("__", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(2, state.start);
         try std.testing.expectEqual(2, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1225,15 +1281,12 @@ const LexerState = struct {
         defer state.lexemes.deinit();
 
         try state.scanLexeme();
-        try state.scanLexeme();
 
-        try std.testing.expectEqual(2, state.lexemes.items.len);
-        try std.testing.expectEqual(.bold, state.lexemes.items[0].lexeme_type);
-        try std.testing.expectEqualStrings("**", state.lexemes.items[0].value);
+        try std.testing.expectEqual(1, state.lexemes.items.len);
+        try std.testing.expectEqual(.bold_italic, state.lexemes.items[0].lexeme_type);
+        try std.testing.expectEqualStrings("***", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
-        try std.testing.expectEqual(.italic, state.lexemes.items[1].lexeme_type);
-        try std.testing.expectEqualStrings("*", state.lexemes.items[1].value);
-        try std.testing.expectEqual(1, state.lexemes.items[1].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(3, state.start);
         try std.testing.expectEqual(3, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1247,15 +1300,12 @@ const LexerState = struct {
         defer state.lexemes.deinit();
 
         try state.scanLexeme();
-        try state.scanLexeme();
 
-        try std.testing.expectEqual(2, state.lexemes.items.len);
-        try std.testing.expectEqual(.bold, state.lexemes.items[0].lexeme_type);
-        try std.testing.expectEqualStrings("__", state.lexemes.items[0].value);
+        try std.testing.expectEqual(1, state.lexemes.items.len);
+        try std.testing.expectEqual(.bold_italic, state.lexemes.items[0].lexeme_type);
+        try std.testing.expectEqualStrings("___", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
-        try std.testing.expectEqual(.italic, state.lexemes.items[1].lexeme_type);
-        try std.testing.expectEqualStrings("_", state.lexemes.items[1].value);
-        try std.testing.expectEqual(1, state.lexemes.items[1].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(3, state.start);
         try std.testing.expectEqual(3, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1275,9 +1325,11 @@ const LexerState = struct {
         try std.testing.expectEqual(.text, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("test", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(.forced_newline, state.lexemes.items[1].lexeme_type);
         try std.testing.expectEqualStrings("  \n", state.lexemes.items[1].value);
         try std.testing.expectEqual(1, state.lexemes.items[1].line);
+        try std.testing.expectEqual(false, state.lexemes.items[1].has_following_space);
         try std.testing.expectEqual(7, state.start);
         try std.testing.expectEqual(7, state.current);
         try std.testing.expectEqual(2, state.line);
@@ -1296,6 +1348,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.code, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("`", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(1, state.start);
         try std.testing.expectEqual(1, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1314,6 +1367,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.code_escaped, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("``", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(2, state.start);
         try std.testing.expectEqual(2, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1332,6 +1386,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.image_start, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("!", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(1, state.start);
         try std.testing.expectEqual(1, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1352,6 +1407,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.alt_start, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("[", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(2, state.start);
         try std.testing.expectEqual(2, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1372,6 +1428,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.alt_end, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("]", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(8, state.start);
         try std.testing.expectEqual(8, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1392,6 +1449,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.url_start, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("(", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(9, state.start);
         try std.testing.expectEqual(9, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1412,6 +1470,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.url_end, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings(")", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(13, state.start);
         try std.testing.expectEqual(13, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1430,6 +1489,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.ampersand, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("&", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(false, state.lexemes.items[0].has_following_space);
         try std.testing.expectEqual(1, state.start);
         try std.testing.expectEqual(1, state.current);
         try std.testing.expectEqual(1, state.line);
@@ -1437,7 +1497,7 @@ const LexerState = struct {
 
     test "addLexeme" {
         var state = LexerState{
-            .markdown = "**test**more",
+            .markdown = "** test**more",
             .lexemes = LexemeList.init(std.testing.allocator),
             .current = 2,
         };
@@ -1449,14 +1509,17 @@ const LexerState = struct {
         try std.testing.expectEqual(.bold, state.lexemes.items[0].lexeme_type);
         try std.testing.expectEqualStrings("**", state.lexemes.items[0].value);
         try std.testing.expectEqual(1, state.lexemes.items[0].line);
+        try std.testing.expectEqual(true, state.lexemes.items[0].has_following_space);
 
-        state.current += 4;
+        state.start += 1;
+        state.current += 5;
         try state.addLexeme(.text);
 
         try std.testing.expectEqual(2, state.lexemes.items.len);
         try std.testing.expectEqual(.text, state.lexemes.items[1].lexeme_type);
         try std.testing.expectEqualStrings("test", state.lexemes.items[1].value);
         try std.testing.expectEqual(1, state.lexemes.items[1].line);
+        try std.testing.expectEqual(false, state.lexemes.items[1].has_following_space);
 
         state.current += 2;
         try state.addLexeme(.bold);
@@ -1465,6 +1528,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.bold, state.lexemes.items[2].lexeme_type);
         try std.testing.expectEqualStrings("**", state.lexemes.items[2].value);
         try std.testing.expectEqual(1, state.lexemes.items[2].line);
+        try std.testing.expectEqual(false, state.lexemes.items[2].has_following_space);
 
         state.current += 4;
         try state.addLexeme(.text);
@@ -1473,6 +1537,7 @@ const LexerState = struct {
         try std.testing.expectEqual(.text, state.lexemes.items[3].lexeme_type);
         try std.testing.expectEqualStrings("more", state.lexemes.items[3].value);
         try std.testing.expectEqual(1, state.lexemes.items[3].line);
+        try std.testing.expectEqual(false, state.lexemes.items[3].has_following_space);
 
         // Ignore zero-length strings
         try state.addLexeme(.text);

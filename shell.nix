@@ -7,6 +7,7 @@ stdenv.mkDerivation rec {
     buildInputs = with pkgs; [ 
         zig
         kcov
+        linuxKernel.packages.linux_zen.perf
     ];
 }
 
