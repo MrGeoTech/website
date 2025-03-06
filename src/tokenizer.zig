@@ -147,11 +147,14 @@ pub const Token = struct {
 
     pub fn writeLexeme(self: Token, writer: anytype) @TypeOf(writer).Error!void {
         switch (self.value) {
-            .lexeme => |lexeme| _ = try writer.write(lexeme),
+            .lexeme => |lexeme| {
+                _ = try writer.write(lexeme);
+                if (self.has_following_space) try writer.writeByte(' ');
+            },
             .children => |children| {
-                for (children.tokens) |token|
-                try token.writeLexeme(writer)
-
+                for (children.tokens) |token| {
+                    try token.writeLexeme(writer);
+                }
             },
         }
     }
@@ -192,7 +195,7 @@ pub const Token = struct {
 
         const lexeme1 = try lexeme_token1.getLexeme(std.testing.allocator);
         defer std.testing.allocator.free(lexeme1);
-        try std.testing.expectEqualStrings("Hello", lexeme1);
+        try std.testing.expectEqualStrings("Hello ", lexeme1);
         const lexeme2 = try lexeme_token2.getLexeme(std.testing.allocator);
         defer std.testing.allocator.free(lexeme2);
         try std.testing.expectEqualStrings("World", lexeme2);

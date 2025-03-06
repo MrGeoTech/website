@@ -43,6 +43,7 @@ fn appendToken(state: CompileState) error{OutOfMemory}!void {
         .bold_italic => appendHtml(state, &.{ "strong", "em" }, false),
         .blockquote => appendRecusive(state, &.{"blockquote"}),
         .ordered_list, .unordered_list => appendList(state),
+        .code => appendHtml(state, &.{"code"}, false),
         else => appendHtml(state, null, false),
     };
 }
@@ -55,7 +56,7 @@ fn appendHtml(
     if (tags) |t| inline for (t) |tag| try state.html.appendSlice("<" ++ tag ++ ">");
     try appendLexeme(state);
     if (tags) |t| inline for (t) |tag| try state.html.appendSlice("</" ++ tag ++ ">");
-    if (state.tokens[state.current].has_following_space) try state.html.append(' ');
+    if (tags != null and state.tokens[state.current].has_following_space) try state.html.append(' ');
     if (follow_with_newline and !should_compress) try appendNewline(state);
 }
 

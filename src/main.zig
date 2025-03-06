@@ -40,7 +40,6 @@ pub fn main() !void {
 
     const writer = std.io.getStdOut().writer();
     for (lexemes.items) |lexeme| {
-        if (lexeme.line != 276) continue;
         try lexeme.write(writer);
         try writer.writeByte('\n');
     }
@@ -51,7 +50,6 @@ pub fn main() !void {
     const tokenize_time = timer.read() / ns_per_us;
 
     for (tokens.tokens) |token| {
-        if (token.line != 276) continue;
         try token.write(writer);
         try writer.writeByte('\n');
     }
