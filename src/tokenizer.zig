@@ -6,13 +6,13 @@ const LexemeList = std.ArrayList(lexer.Lexeme);
 pub const TokenList = struct {
     tokens: []Token = &.{},
 
-    pub fn of(lexemes: LexemeList) !TokenList {
+    pub fn of(lexemes: LexemeList, comptime children_type: ?TokenType) !TokenList {
         const tokens = TokenList{
             .tokens = try lexemes.allocator.alloc(Token, lexemes.items.len),
         };
 
         for (lexemes.items, 0..) |lexeme, i| {
-            tokens.tokens[i] = Token.of(lexeme);
+            tokens.tokens[i] = Token.of(lexeme, children_type);
         }
 
         return tokens;
@@ -107,7 +107,7 @@ pub const TokenType = enum {
     }
 
     pub fn isSpecialCharacter(self: TokenType) bool {
-        return self == .ampersand;
+        return self == .ampersand or self == .html_start or self == .html_end;
     }
 };
 
@@ -120,9 +120,12 @@ pub const Token = struct {
     line: usize,
     has_following_space: bool,
 
-    pub fn of(lexeme: lexer.Lexeme) Token {
+    pub fn of(lexeme: lexer.Lexeme, comptime children_type: ?TokenType) Token {
         return .{
-            .token_type = lexeme.lexeme_type,
+            .token_type = if (children_type) |t|
+                if (lexeme.lexeme_type.isSpecialCharacter()) lexeme.lexeme_type else t
+            else
+                lexeme.lexeme_type,
             .value = .{ .lexeme = lexeme.value },
             .line = lexeme.line,
             .has_following_space = lexeme.has_following_space,
@@ -136,7 +139,7 @@ pub const Token = struct {
             .line = 1,
             .has_following_space = false,
         };
-        const token = Token.of(lexeme);
+        const token = Token.of(lexeme, null);
 
         try std.testing.expectEqual(.text, token.token_type);
         try std.testing.expectEqual(.lexeme, std.meta.activeTag(token.value));
@@ -149,11 +152,11 @@ pub const Token = struct {
         switch (self.value) {
             .lexeme => |lexeme| {
                 _ = try writer.write(lexeme);
-                if (self.has_following_space) try writer.writeByte(' ');
             },
             .children => |children| {
                 for (children.tokens) |token| {
                     try token.writeLexeme(writer);
+                    if (token.has_following_space) try writer.writeByte(' ');
                 }
             },
         }
@@ -195,7 +198,7 @@ pub const Token = struct {
 
         const lexeme1 = try lexeme_token1.getLexeme(std.testing.allocator);
         defer std.testing.allocator.free(lexeme1);
-        try std.testing.expectEqualStrings("Hello ", lexeme1);
+        try std.testing.expectEqualStrings("Hello", lexeme1);
         const lexeme2 = try lexeme_token2.getLexeme(std.testing.allocator);
         defer std.testing.allocator.free(lexeme2);
         try std.testing.expectEqualStrings("World", lexeme2);
@@ -325,6 +328,7 @@ const TokenizerState = struct {
             .alt_start => try self.addLink(),
             .image_start => try self.addImage(),
             .html_start => try self.addHtml(),
+            .html_end => try self.addCurrent(),
             .horizontal_rule => {
                 if (lexeme.line == 1)
                     try self.addMetadata()
@@ -343,7 +347,7 @@ const TokenizerState = struct {
             },
             .newline => {
                 if (self.current + 1 < self.lexemes.len and self.lexemes[self.current + 1].lexeme_type == .newline) {
-                    try self.addCombineChildren(.forced_newline, 2);
+                    try self.addCombineChildren(.forced_newline, 2, false, false, false);
                 } else {
                     self.current += 1;
                 }
@@ -357,6 +361,9 @@ const TokenizerState = struct {
         self: *TokenizerState,
         token_type: TokenType,
         count: usize,
+        has_leading_space: bool,
+        has_trailing_space: bool,
+        has_following_space: bool,
     ) error{OutOfMemory}!void {
         if (self.current + count > self.lexemes.len) return;
 
@@ -365,17 +372,22 @@ const TokenizerState = struct {
             self.lexemes[self.current + count - 1].value,
         );
 
-        if (self.lexemes[self.current].has_following_space) {
+        // Add space before the string
+        if (has_leading_space) {
             const combined_strings_int: usize = @intFromPtr(combined_strings.ptr);
             const new_ptr: [*]const u8 = @ptrFromInt(combined_strings_int - 1);
             combined_strings = new_ptr[0 .. combined_strings.len + 1];
+        }
+        // Add space after the string
+        if (has_trailing_space) {
+            combined_strings = combined_strings.ptr[0 .. combined_strings.len + 1];
         }
 
         try self.tokens.append(self.allocator, .{
             .token_type = token_type,
             .value = .{ .lexeme = combined_strings },
             .line = self.lexemes[self.current].line,
-            .has_following_space = self.lexemes[self.current + count - 1].has_following_space,
+            .has_following_space = has_following_space,
         });
 
         self.current += count;
@@ -385,8 +397,10 @@ const TokenizerState = struct {
         self: *TokenizerState,
         token_type: TokenType,
         count: usize,
-        comptime is_end: bool,
+        has_leading_space: bool,
+        has_trailing_space: bool,
         comptime tokenize_children: bool,
+        comptime children_type: ?TokenType,
     ) error{OutOfMemory}!void {
         if (self.current + count > self.lexemes.len) return;
 
@@ -399,10 +413,10 @@ const TokenizerState = struct {
         var children = if (tokenize_children)
             try tokenize(lexemes)
         else
-            TokenList.of(lexemes);
+            try TokenList.of(lexemes, children_type);
         errdefer children.deinit(self.allocator);
 
-        if (self.lexemes[self.current].has_following_space)
+        if (has_leading_space)
             try children.insert(self.allocator, .{
                 .token_type = .text,
                 .value = .{ .lexeme = "" },
@@ -414,19 +428,19 @@ const TokenizerState = struct {
             .token_type = token_type,
             .value = .{ .children = children },
             .line = self.lexemes[self.current].line,
-            .has_following_space = self.lexemes[self.current + count - @intFromBool(!is_end)].has_following_space,
+            .has_following_space = has_trailing_space,
         });
 
         self.current += count;
     }
 
     fn addCurrent(self: *TokenizerState) error{OutOfMemory}!void {
-        try self.tokens.append(self.allocator, Token.of(self.lexemes[self.current]));
+        try self.tokens.append(self.allocator, Token.of(self.lexemes[self.current], null));
         self.current += 1;
     }
 
     fn addCurrentAs(self: *TokenizerState, comptime token_type: TokenType) error{OutOfMemory}!void {
-        try self.tokens.append(self.allocator, Token.of(self.lexemes[self.current]));
+        try self.tokens.append(self.allocator, Token.of(self.lexemes[self.current], null));
         self.tokens.tokens[self.tokens.tokens.len - 1].token_type = token_type;
         self.current += 1;
     }
@@ -448,7 +462,14 @@ const TokenizerState = struct {
         }
 
         self.current += 1;
-        try self.addWithChildren(lexeme.lexeme_type, count - 1, true, true);
+        try self.addWithChildren(
+            lexeme.lexeme_type,
+            count - 1,
+            self.lexemes[self.current - 1].has_following_space,
+            self.lexemes[self.current + count - 1].has_following_space,
+            true,
+            null,
+        );
         self.current += 1;
     }
 
@@ -469,7 +490,14 @@ const TokenizerState = struct {
         }
 
         self.current += 1;
-        try self.addCombineChildren(token_type, count - 1);
+        try self.addWithChildren(
+            token_type,
+            count - 1,
+            lexeme.has_following_space,
+            self.lexemes[self.current + count - 1].has_following_space,
+            false,
+            .text,
+        );
         self.current += 1;
     }
 
@@ -489,7 +517,7 @@ const TokenizerState = struct {
         }
 
         self.current += if (count > 0) 1 else 0;
-        try self.addCombineChildren(.metadata, count - 2);
+        try self.addCombineChildren(.metadata, count - 2, false, false, false);
         self.current += 2;
     }
 
@@ -505,7 +533,7 @@ const TokenizerState = struct {
             !self.lexemes[self.current + count].lexeme_type.isNewLine())
             count += 1;
 
-        return self.addCombineChildren(header_type, count);
+        return self.addWithChildren(header_type, count, false, false, false, .text);
     }
 
     fn addBlockquote(self: *TokenizerState) TokenizeError!void {
@@ -615,7 +643,7 @@ const TokenizerState = struct {
         if (self.current < self.lexemes.len and
             self.lexemes[self.current].lexeme_type == .code_lang)
         {
-            try children.append(self.allocator, Token.of(self.lexemes[self.current]));
+            try children.append(self.allocator, Token.of(self.lexemes[self.current], null));
             self.current += 1;
         }
 
@@ -800,12 +828,19 @@ const TokenizerState = struct {
         var count: usize = 0;
         while (self.current + count <= self.lexemes.len) {
             const lexeme_type = self.lexemes[self.current + count].lexeme_type;
-            if (lexeme_type.isNewLine()) return self.addCurrentAs(.text);
+            if (lexeme_type.isNewLine()) return self.addCurrent();
             if (lexeme_type == .html_end) break;
             count += 1;
         }
 
-        try self.addCombineChildren(.html, count + 1);
+        try self.addWithChildren(
+            .html,
+            count + 1,
+            self.current > 0 and self.lexemes[self.current - 1].has_following_space,
+            self.lexemes[self.current + count].has_following_space,
+            false,
+            .text,
+        );
     }
 };
 
@@ -831,10 +866,7 @@ fn combineStrings(string_start: []const u8, string_end: []const u8) []const u8 {
 }
 
 test "tokenize" {
-    const markdown_const = "## Test Header\nThat was a test header!";
-    var buffer: [markdown_const.len]u8 = undefined;
-    const markdown: []u8 = &buffer;
-    @memcpy(markdown, markdown_const);
+    const markdown = "## Test Header\nThat was a test header!";
 
     const lexemes = try lexer.process(std.testing.allocator, markdown);
     defer lexemes.deinit();

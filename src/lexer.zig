@@ -171,6 +171,23 @@ const LexerState = struct {
 
                 try state.addLexeme(.code_lang);
             },
+            '$' => {
+                // Return if the math block doesn't start the the start of the line
+                if (state.current > 0 and state.markdown[state.current - 1] != '\n') return;
+
+                var count: usize = 1;
+                while (state.current + count < state.markdown.len and
+                    state.markdown[state.current + count] == char) count += 1;
+
+                if (state.current + count < state.markdown.len and
+                    state.markdown[state.current + count] != '\n')
+                    return;
+
+                if (count == 2) {
+                    state.current += count;
+                    try state.addLexeme(.math_block);
+                }
+            },
             ' ' => {
                 // Adjust to skipping first space
                 state.current -= 1;
@@ -254,6 +271,11 @@ const LexerState = struct {
                 try state.addLexeme(.text);
                 state.current += 1;
                 try state.addLexeme(.url_end);
+            },
+            '$' => {
+                try state.addLexeme(.text);
+                state.current += 1;
+                try state.addLexeme(.math);
             },
             '&' => {
                 try state.addLexeme(.text);

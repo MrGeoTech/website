@@ -139,8 +139,13 @@ fn serveVI(self: *Router, request: Request) void {
     request.parseBody() catch |err| return self.handleError(request, err);
     request.parseQuery();
 
+    var arena = std.heap.ArenaAllocator.init(self.allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
     const LocationType = struct { location: []const u8 };
-    const json = std.json.parseFromSlice(LocationType, self.allocator, request.body.?, .{}) catch |err|
+    const json = std.json.parseFromSlice(LocationType, allocator, request.body.?, .{}) catch |err|
         return self.handleError(request, err);
     defer json.deinit();
     const location = json.value.location[if (json.value.location[0] == '/') 1 else 0..];
@@ -150,9 +155,8 @@ fn serveVI(self: *Router, request: Request) void {
     std.log.debug("Dir: {s}", .{dir_path});
 
     // Make sure that the file is real and that the path is valid
-    const dir_real_path = getRealpath(self.allocator, self.docs_dir, self.docs_dir_path, dir_path) catch |err|
+    const dir_real_path = getRealpath(allocator, self.docs_dir, self.docs_dir_path, dir_path) catch |err|
         return self.handleError(request, err);
-    defer self.allocator.free(dir_real_path);
 
     var dir = self.docs_dir.openDir(dir_real_path, .{ .iterate = true }) catch |err|
         return self.handleError(request, err);
@@ -163,25 +167,22 @@ fn serveVI(self: *Router, request: Request) void {
     var iterator = dir.iterate();
     while (iterator.next() catch |err| return self.handleError(request, err)) |file| {
         if (file.kind != .file) continue;
-        const display_name = getFileName(self.allocator, dir, file.name) catch |err|
+        const display_name = getFileName(allocator, dir, file.name) catch |err|
             return self.handleError(request, err);
-        defer self.allocator.free(display_name);
 
         std.log.debug("Display name: {s}\nFile name: {s}", .{ display_name, location[dir_path.len + 1 ..] });
         if (eql(u8, display_name, location[dir_path.len + 1 ..])) {
-            file_name = self.allocator.dupe(u8, file.name) catch |err|
+            file_name = allocator.dupe(u8, file.name) catch |err|
                 return self.handleError(request, err);
             break;
         }
     }
-    defer self.allocator.free(file_name);
 
-    const file_real_path = self.allocator.alloc(
+    const file_real_path = allocator.alloc(
         u8,
         dir_real_path.len + 1 + file_name.len,
     ) catch |err|
         return self.handleError(request, err);
-    defer self.allocator.free(file_real_path);
 
     @memcpy(file_real_path[0..dir_real_path.len], dir_real_path);
     file_real_path[dir_real_path.len] = '/';
@@ -190,22 +191,26 @@ fn serveVI(self: *Router, request: Request) void {
     std.log.debug("{s}", .{file_real_path});
 
     // Read in file contents, max size 1 MiB
-    const file_contents = self.docs_dir.readFileAlloc(
-        self.allocator,
+    const markdown = self.docs_dir.readFileAlloc(
+        allocator,
         file_real_path,
         1024 * 1024,
     ) catch |err| return self.handleError(request, err);
-    defer self.allocator.free(file_contents);
 
-    var tokens = @import("tokenizer.zig").tokenize(self.allocator, file_contents) catch |err|
+    const lexemes = @import("lexer.zig").process(allocator, markdown) catch |err|
         return self.handleError(request, err);
-    defer tokens.deinit();
+
+    const tokens = @import("tokenizer.zig").tokenize(lexemes) catch |err|
+        return self.handleError(request, err);
+
+    const html = @import("compiler.zig").compile(allocator, tokens) catch |err|
+        return self.handleError(request, err);
 
     // Response with result
     request.setStatus(.ok);
     request.setContentType(.HTML) catch |err|
         return self.handleError(request, err);
-    request.sendBody(file_contents) catch |err|
+    request.sendBody(html) catch |err|
         return self.handleError(request, err);
 }
 

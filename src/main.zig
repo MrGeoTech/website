@@ -7,7 +7,7 @@ const compiler = @import("compiler.zig");
 
 const ns_per_us = std.time.ns_per_us;
 
-//const Router = @import("router.zig");
+const Router = @import("router.zig");
 const Allocator = std.mem.Allocator;
 
 const assert = std.debug.assert;
@@ -20,76 +20,75 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
-    var docs_dir = try std.fs.cwd().openDir("docs", .{});
-    defer docs_dir.close();
+    //var docs_dir = try std.fs.cwd().openDir("docs", .{});
+    //defer docs_dir.close();
 
-    const markdown = try docs_dir.readFileAlloc(
-        allocator,
-        "test.md",
-        //"School/ECE 111: Intro to ECE/EX02.md",
-        1024 * 1024,
-    );
-    defer allocator.free(markdown);
+    //const markdown = try docs_dir.readFileAlloc(
+    //    allocator,
+    //    //"test.md",
+    //    "School/ECE 376: Embedded Systems/HW11.md",
+    //    1024 * 1024,
+    //);
+    //defer allocator.free(markdown);
 
-    //const markdown = "## Test Header\nThat was a **test header**.\n**test\n\ntest  \ntesting";
+    ////const markdown = "## Test Header\nThat was a **test header**.\n**test\n\ntest  \ntesting";
 
-    var timer = try std.time.Timer.start();
-    const lexemes = try lexer.process(allocator, markdown);
-    defer lexemes.deinit();
-    const lexer_time = timer.read() / ns_per_us;
+    //var timer = try std.time.Timer.start();
+    //const lexemes = try lexer.process(allocator, markdown);
+    //defer lexemes.deinit();
+    //const lexer_time = timer.read() / ns_per_us;
 
-    const writer = std.io.getStdOut().writer();
-    for (lexemes.items) |lexeme| {
-        try lexeme.write(writer);
-        try writer.writeByte('\n');
-    }
+    //const writer = std.io.getStdOut().writer();
+    //for (lexemes.items) |lexeme| {
+    //    try lexeme.write(writer);
+    //    try writer.writeByte('\n');
+    //}
 
-    timer.reset();
-    const tokens = try tokenizer.tokenize(lexemes);
-    defer tokens.deinit(lexemes.allocator);
-    const tokenize_time = timer.read() / ns_per_us;
+    //timer.reset();
+    //const tokens = try tokenizer.tokenize(lexemes);
+    //defer tokens.deinit(lexemes.allocator);
+    //const tokenize_time = timer.read() / ns_per_us;
 
-    for (tokens.tokens) |token| {
-        try token.write(writer);
-        try writer.writeByte('\n');
-    }
+    //for (tokens.tokens) |token| {
+    //    try token.write(writer);
+    //    try writer.writeByte('\n');
+    //}
 
-    timer.reset();
-    const result = try compiler.compile(allocator, tokens);
-    defer allocator.free(result);
-    const compile_time = timer.read() / ns_per_us;
+    //timer.reset();
+    //const result = try compiler.compile(allocator, tokens);
+    //defer allocator.free(result);
+    //const compile_time = timer.read() / ns_per_us;
 
-    std.log.info("{s}", .{result});
+    //std.log.info("{s}", .{result});
 
-    std.log.info("Total Bytes: {d} bytes", .{markdown.len});
-    std.log.info("Lexer Time: {d} us", .{lexer_time});
-    std.log.info("Tokenize Time: {d} us", .{tokenize_time});
-    std.log.info("Compile Time: {d} us", .{compile_time});
-    std.log.info("Total Time: {d} us", .{lexer_time + tokenize_time + compile_time});
-    std.log.info("Total Time per Byte: {d} us", .{@as(f32, @floatFromInt(lexer_time + tokenize_time + compile_time)) / @as(f32, @floatFromInt(markdown.len))});
+    //std.log.info("Total Bytes: {d} bytes", .{markdown.len});
+    //std.log.info("Lexer Time: {d} us", .{lexer_time});
+    //std.log.info("Tokenize Time: {d} us", .{tokenize_time});
+    //std.log.info("Compile Time: {d} us", .{compile_time});
+    //std.log.info("Total Time: {d} us", .{lexer_time + tokenize_time + compile_time});
+    //std.log.info("Total Time per Byte: {d} us", .{@as(f32, @floatFromInt(lexer_time + tokenize_time + compile_time)) / @as(f32, @floatFromInt(markdown.len))});
 
-    //var router = try Router.init(allocator);
-    //defer router.deinit();
+    var router = try Router.init(allocator);
+    defer router.deinit();
 
-    //var router_zap = try router.getRouter();
-    //defer router_zap.deinit();
+    var router_zap = try router.getRouter();
+    defer router_zap.deinit();
 
-    //std.log.info("Starting server", .{});
-    //defer std.log.info("Stopping server", .{});
+    std.log.info("Starting server", .{});
+    defer std.log.info("Stopping server", .{});
 
-    // TODO: Uncomment
-    //var listener = zap.HttpListener.init(.{
-    //    .port = if (builtin.mode == .Debug) 8080 else 82,
-    //    .on_request = router_zap.on_request_handler(),
-    //    .log = true,
-    //    .max_clients = 10_000,
-    //});
-    //try listener.listen();
+    var listener = zap.HttpListener.init(.{
+        .port = if (builtin.mode == .Debug) 8080 else 82,
+        .on_request = router_zap.on_request_handler(),
+        .log = true,
+        .max_clients = 10_000,
+    });
+    try listener.listen();
 
-    //zap.start(.{
-    //    .threads = 1,
-    //    .workers = 1,
-    //});
+    zap.start(.{
+        .threads = 1,
+        .workers = 1,
+    });
 }
 
 test "main" {
