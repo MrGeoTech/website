@@ -206,6 +206,8 @@ fn serveVI(self: *Router, request: Request) void {
     const html = @import("compiler.zig").compile(allocator, tokens) catch |err|
         return self.handleError(request, err);
 
+    std.log.debug("{s}", .{html});
+
     // Response with result
     request.setStatus(.ok);
     request.setContentType(.HTML) catch |err|

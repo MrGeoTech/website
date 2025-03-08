@@ -7,35 +7,15 @@ const CompileState = struct {
     allocator: std.mem.Allocator,
     html: ByteArrayList.Writer,
     tokens: []const tokenizer.Token,
-    current: usize,
+    current: usize = 0,
+    is_in_paragraph: bool = false,
 };
 
 const assert = std.debug.assert;
 
 const should_compress = @import("builtin").mode != .Debug;
 
-pub fn compile(allocator: std.mem.Allocator, tokens: tokenizer.TokenList) error{OutOfMemory}![]u8 {
-    var html = try std.ArrayList(u8).initCapacity(allocator, 1024);
-    defer html.deinit();
-
-    try html.appendSlice("\n<p>\n");
-
-    var state = CompileState{
-        .allocator = html.allocator,
-        .html = html.writer(),
-        .tokens = tokens.tokens,
-        .current = 0,
-    };
-    while (state.current < tokens.tokens.len) : (state.current += 1) {
-        try appendToken(state);
-    }
-
-    try html.appendSlice("\n</p>\n");
-
-    return allocator.dupe(u8, html.items);
-}
-
-fn compileRecusive(allocator: std.mem.Allocator, tokens: tokenizer.TokenList) error{OutOfMemory}![]u8 {
+pub fn compile(allocator: std.mem.Allocator, tokens: tokenizer.TokenList, comptime ignore_paragraph: bool,) error{OutOfMemory}![]u8 {
     var html = try std.ArrayList(u8).initCapacity(allocator, 1024);
     defer html.deinit();
 
@@ -43,96 +23,116 @@ fn compileRecusive(allocator: std.mem.Allocator, tokens: tokenizer.TokenList) er
         .allocator = html.allocator,
         .html = html.writer(),
         .tokens = tokens.tokens,
-        .current = 0,
     };
     while (state.current < tokens.tokens.len) : (state.current += 1) {
-        try appendToken(state);
+        try appendToken(&state, ignore_paragraph);
     }
 
     return allocator.dupe(u8, html.items);
 }
 
-fn appendToken(state: CompileState) error{OutOfMemory}!void {
+fn appendToken(state: *CompileState, comptime ignore_paragraph: bool,) error{OutOfMemory}!void {
     assert(state.current < state.tokens.len);
     try switch (state.tokens[state.current].token_type) {
         .metadata => return,
-        .header_1 => appendHtml(state, &.{"h1"}, true),
-        .header_2 => appendHtml(state, &.{"h2"}, true),
-        .header_3 => appendHtml(state, &.{"h3"}, true),
-        .header_4 => appendHtml(state, &.{"h4"}, true),
-        .header_5 => appendHtml(state, &.{"h5"}, true),
-        .header_6 => appendHtml(state, &.{"h6"}, true),
+        .header_1 => appendHtml(state, &.{"h1"}, ignore_paragraph),
+        .header_2 => appendHtml(state, &.{"h2"}, ignore_paragraph),
+        .header_3 => appendHtml(state, &.{"h3"}, ignore_paragraph),
+        .header_4 => appendHtml(state, &.{"h4"}, ignore_paragraph),
+        .header_5 => appendHtml(state, &.{"h5"}, ignore_paragraph),
+        .header_6 => appendHtml(state, &.{"h6"}, ignore_paragraph),
         .forced_newline => appendNewline(state),
-        .bold => appendHtml(state, &.{"strong"}, false),
-        .italic => appendHtml(state, &.{"em"}, false),
-        .bold_italic => appendHtml(state, &.{ "strong", "em" }, false),
-        .blockquote => appendRecusive(state, &.{"blockquote"}, true),
-        .ordered_list, .unordered_list => appendList(state),
-        .code => appendRecusive(state, &.{"code"}, false),
-        .code_block => appendCodeBlock(state),
+        .bold => appendHtml(state, &.{"strong"}, ignore_paragraph),
+        .italic => appendHtml(state, &.{"em"}, ignore_paragraph),
+        .bold_italic => appendHtml(state, &.{ "strong", "em" }, ignore_paragraph),
+        .blockquote => appendRecusive(state, &.{"blockquote"}, ignore_paragraph, ignore_paragraph),
+        .ordered_list, .unordered_list => appendList(state, ignore_paragraph),
+        .code => appendRecusive(state, &.{"code"}, ignore_paragraph, true),
+        .code_block => appendCodeBlock(state, ignore_paragraph),
         .math => {
             try state.html.writeByte('$');
-            try appendRecusive(state, &.{}, false);
+            try appendRecusive(state, &.{}, ignore_paragraph, true);
             try state.html.writeByte('$');
         },
         .math_block => {
             try state.html.writeAll("$$\n");
-            try appendRecusive(state, &.{}, false);
+            try appendRecusive(state, &.{}, ignore_paragraph, true);
             try state.html.writeAll("$$\n");
         },
-        .horizontal_rule => appendText(state, "<hr/>"),
-        .image => appendImage(state),
-        .link => appendLink(state),
-        .ampersand => appendText(state, "&amp;"),
-        .html_start => appendText(state, "&lt;"),
-        .html_end => appendText(state, "&gt;"),
-        else => appendHtml(state, null, false),
+        .horizontal_rule => appendText(state, "<hr/>", ignore_paragraph),
+        .image => appendImage(state, ignore_paragraph),
+        .link => appendLink(state, ignore_paragraph),
+        .ampersand => appendText(state, "&amp;", false),
+        .html_start => appendText(state, "&lt;", false),
+        .html_end => appendText(state, "&gt;", false),
+        else => {
+            try appendHtml(state, null);
+        },
     };
 }
 
-fn appendText(state: CompileState, text: []const u8) error{OutOfMemory}!void {
+fn startParagraph(state: *CompileState) error{OutOfMemory}!void {
+    state.is_in_paragraph = true;
+    try state.html.writeAll("<p>");
+}
+
+fn endParagraph(state: *CompileState) error{OutOfMemory}!void {
+    state.is_in_paragraph = false;
+    try state.html.writeAll("</p>");
+}
+
+fn appendText(state: *CompileState, text: []const u8, comptime ignore_paragraph: bool) error{OutOfMemory}!void {
+        if (!ignore_paragraph and !state.is_in_paragraph)
+            try startParagraph(state);
     try state.html.writeAll(text);
     if (state.tokens[state.current].has_following_space) try state.html.writeByte(' ');
 }
 
 fn appendHtml(
-    state: CompileState,
+    state: *CompileState,
     comptime tags: ?[]const []const u8,
-    comptime follow_with_newline: bool,
+    comptime ignore_paragraph: bool,
 ) error{OutOfMemory}!void {
-    if (tags) |t| inline for (t) |tag| try state.html.writeAll("<" ++ tag ++ ">");
+    if (tags) |t| {
+        if (!ignore_paragraph and state.is_in_paragraph)
+            try endParagraph(state);
+        inline for (t) |tag| try state.html.writeAll("<" ++ tag ++ ">");
+    } else {
+        if (!ignore_paragraph and !state.is_in_paragraph)
+            try startParagraph(state);
+    }
     try appendLexeme(state);
     if (tags) |t| inline for (t) |tag| try state.html.writeAll("</" ++ tag ++ ">");
     if (state.tokens[state.current].has_following_space) try state.html.writeByte(' ');
-    if (follow_with_newline and !should_compress) try appendNewline(state);
 }
 
-fn appendNewline(state: CompileState) error{OutOfMemory}!void {
-    try state.html.writeAll(if (should_compress) "<br>" else "<br>\n");
+fn appendNewline(state: *CompileState) error{OutOfMemory}!void {
+    try state.html.writeAll(if (should_compress) "<br/>" else "<br/>\n");
 }
 
 fn appendRecusive(
-    state: CompileState,
+    state: *CompileState,
     comptime tags: ?[]const []const u8,
-    comptime follow_with_newline: bool,
+    comptime ignore_paragraph: bool,
+    comptime ignore_paragraph_children: bool,
 ) error{OutOfMemory}!void {
     assert(state.current < state.tokens.len);
     const token = state.tokens[state.current];
     assert(std.meta.activeTag(token.value) == .children);
 
+    if (state.is_in_paragraph) try endParagraph(state);
     if (tags) |t| inline for (t) |tag| try state.html.writeAll("<" ++ tag ++ ">");
 
-    const inner_html = try compileRecusive(state.allocator, token.value.children);
+    const inner_html = try compile(state.allocator, token.value.children);
     defer state.allocator.free(inner_html);
 
     try state.html.writeAll(inner_html);
 
     if (tags) |t| inline for (t) |tag| try state.html.writeAll("</" ++ tag ++ ">");
     if (state.tokens[state.current].has_following_space) try state.html.writeByte(' ');
-    if (!should_compress and follow_with_newline) try appendNewline(state);
 }
 
-fn appendList(state: CompileState) error{OutOfMemory}!void {
+fn appendList(state: *CompileState) error{OutOfMemory}!void {
     assert(state.current < state.tokens.len);
     const token = state.tokens[state.current];
     assert(token.token_type == .ordered_list or token.token_type == .unordered_list);
@@ -140,6 +140,7 @@ fn appendList(state: CompileState) error{OutOfMemory}!void {
 
     const is_ordered = token.token_type == .ordered_list;
 
+    if (state.is_in_paragraph) try endParagraph(state);
     try state.html.writeAll(if (is_ordered) @as([]const u8, "<ol>") else "<ul>");
     if (!should_compress) try state.html.writeByte('\n');
 
@@ -147,17 +148,16 @@ fn appendList(state: CompileState) error{OutOfMemory}!void {
         .allocator = state.allocator,
         .html = state.html,
         .tokens = token.value.children.tokens,
-        .current = 0,
     };
 
     while (list_state.current < list_state.tokens.len) : (list_state.current += 1)
-        try appendRecusive(list_state, &.{"li"}, true);
+        try appendRecusive(&list_state, &.{"li"});
 
     try state.html.writeAll(if (is_ordered) @as([]const u8, "</ol>") else "</ul>");
     if (!should_compress) try state.html.writeByte('\n');
 }
 
-fn appendCodeBlock(state: CompileState) error{OutOfMemory}!void {
+fn appendCodeBlock(state: *CompileState) error{OutOfMemory}!void {
     assert(state.current < state.tokens.len);
 
     const token = state.tokens[state.current];
@@ -169,6 +169,7 @@ fn appendCodeBlock(state: CompileState) error{OutOfMemory}!void {
     else
         null;
 
+    if (state.is_in_paragraph) try endParagraph(state);
     if (code_lang) |lang| {
         assert(std.meta.activeTag(lang.value) == .lexeme);
         assert(lang.token_type == .code_lang);
@@ -188,12 +189,13 @@ fn appendCodeBlock(state: CompileState) error{OutOfMemory}!void {
     const offset: usize = @intFromBool(code_lang != null);
 
     for (token.value.children.tokens[offset..], 0..) |_, i| {
-        try appendHtml(.{
+        var code_state = CompileState{
             .allocator = state.allocator,
             .html = state.html,
             .tokens = token.value.children.tokens,
             .current = offset + i,
-        }, null, false);
+        };
+        try appendHtml(&code_state, null);
     }
 
     if (!should_compress) try state.html.writeByte('\n');
@@ -201,7 +203,7 @@ fn appendCodeBlock(state: CompileState) error{OutOfMemory}!void {
     if (!should_compress) try state.html.writeByte('\n');
 }
 
-fn appendImage(state: CompileState) error{OutOfMemory}!void {
+fn appendImage(state: *CompileState) error{OutOfMemory}!void {
     assert(state.current < state.tokens.len);
     const token = state.tokens[state.current];
     assert(std.meta.activeTag(token.value) == .children);
@@ -213,6 +215,7 @@ fn appendImage(state: CompileState) error{OutOfMemory}!void {
     assert(std.meta.activeTag(alt_token.value) == .lexeme);
     assert(std.meta.activeTag(url_token.value) == .lexeme);
 
+    if (state.is_in_paragraph) try endParagraph(state);
     try state.html.print("<img alt=\"{s}\" src=\"{s}\"/>", .{
         alt_token.value.lexeme,
         url_token.value.lexeme,
@@ -220,7 +223,7 @@ fn appendImage(state: CompileState) error{OutOfMemory}!void {
     if (token.has_following_space) try state.html.writeByte(' ');
 }
 
-fn appendLink(state: CompileState) error{OutOfMemory}!void {
+fn appendLink(state: *CompileState) error{OutOfMemory}!void {
     assert(state.current < state.tokens.len);
     const token = state.tokens[state.current];
     assert(std.meta.activeTag(token.value) == .children);
@@ -232,6 +235,7 @@ fn appendLink(state: CompileState) error{OutOfMemory}!void {
     assert(std.meta.activeTag(alt_token.value) == .lexeme);
     assert(std.meta.activeTag(url_token.value) == .lexeme);
 
+    if (state.is_in_paragraph) try endParagraph(state);
     try state.html.print("<a href=\"{s}\">{s}</a>", .{
         url_token.value.lexeme,
         alt_token.value.lexeme,
@@ -239,7 +243,7 @@ fn appendLink(state: CompileState) error{OutOfMemory}!void {
     if (token.has_following_space) try state.html.writeByte(' ');
 }
 
-fn appendLexeme(state: CompileState) error{OutOfMemory}!void {
+fn appendLexeme(state: *CompileState) error{OutOfMemory}!void {
     assert(state.current < state.tokens.len);
     try state.tokens[state.current].writeLexeme(state.html);
 }
