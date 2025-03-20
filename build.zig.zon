@@ -1,6 +1,5 @@
 .{
-    .name = .website,
-    .fingerprint = 0x476f5de72cb0654f,
+    .name = "website",
     .version = "0.0.0",
     .minimum_zig_version = "0.13.0",
 

@@ -13,10 +13,8 @@ pub fn build(b: *std.Build) !void {
     const exe = b.addExecutable(.{
         .name = "website",
         .root_source_file = b.path("src/main.zig"),
-        .root_module = b.createModule(.{
-            .target = target,
-            .optimize = optimize,
-        }),
+        .target = target,
+        .optimize = optimize,
     });
     exe.root_module.addImport("zap", zap.module("zap"));
     b.installArtifact(exe);
@@ -126,8 +124,8 @@ const PrintOutputLocation = struct {
         return print;
     }
 
-    fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) anyerror!void {
-        _ = options;
+    fn make(step: *std.Build.Step, prog_node: std.Progress.Node) !void {
+        _ = prog_node;
 
         const print: *PrintOutputLocation = @fieldParentPtr("step", step);
 
