@@ -203,7 +203,7 @@ fn serveVI(self: *Router, request: Request) void {
     const tokens = @import("tokenizer.zig").tokenize(lexemes) catch |err|
         return self.handleError(request, err);
 
-    const html = @import("compiler.zig").compile(allocator, tokens) catch |err|
+    const html = @import("compiler2.zig").compile(allocator, tokens, .{}) catch |err|
         return self.handleError(request, err);
 
     std.log.debug("{s}", .{html});
