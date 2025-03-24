@@ -15,6 +15,7 @@ pub const CompileOptions = struct {
     text_children: bool = false,
     ignore_paragraph_start: bool = false,
     ignore_paragraph_end: bool = false,
+    ignore_paragraph_children_end: bool = false,
 };
 
 const assert = std.debug.assert;
@@ -29,6 +30,8 @@ pub fn compile(
     var html = try std.ArrayList(u8).initCapacity(allocator, 1024);
     defer html.deinit();
 
+    try html.appendSlice("<div id=\"markdown\">");
+
     var state = CompileState{
         .allocator = html.allocator,
         .html = html.writer(),
@@ -37,6 +40,8 @@ pub fn compile(
     while (state.current < tokens.tokens.len) : (state.current += 1) {
         try appendToken(&state, options);
     }
+
+    try html.appendSlice("</div>");
 
     return allocator.dupe(u8, html.items);
 }
@@ -48,22 +53,64 @@ fn appendToken(
     assert(state.current < state.tokens.len);
     try switch (state.tokens[state.current].token_type) {
         .metadata => return,
-        .header_1 => append(state, &.{"h1"}, options),
-        .header_2 => append(state, &.{"h2"}, options),
-        .header_3 => append(state, &.{"h3"}, options),
-        .header_4 => append(state, &.{"h4"}, options),
-        .header_5 => append(state, &.{"h5"}, options),
-        .header_6 => append(state, &.{"h6"}, options),
+        .header_1 => append(state, &.{"h1"}, .{
+            .ignore_paragraph_start = true,
+            .ignore_paragraph_end = true,
+        }),
+        .header_2 => append(state, &.{"h2"}, .{
+            .ignore_paragraph_start = true,
+            .ignore_paragraph_end = true,
+        }),
+        .header_3 => append(state, &.{"h3"}, .{
+            .ignore_paragraph_start = true,
+            .ignore_paragraph_end = true,
+        }),
+        .header_4 => append(state, &.{"h4"}, .{
+            .ignore_paragraph_start = true,
+            .ignore_paragraph_end = true,
+        }),
+        .header_5 => append(state, &.{"h5"}, .{
+            .ignore_paragraph_start = true,
+            .ignore_paragraph_end = true,
+        }),
+        .header_6 => append(state, &.{"h6"}, .{
+            .ignore_paragraph_start = true,
+            .ignore_paragraph_end = true,
+        }),
         .forced_newline => appendBreak(state, options),
-        .bold => append(state, &.{"strong"}, options),
-        .italic => append(state, &.{"em"}, options),
-        .bold_italic => append(state, &.{ "strong", "em" }, options),
-        .blockquote => append(state, &.{"blockquote"}, options),
-        .ordered_list, .unordered_list => appendList(state, options),
+        .bold => append(state, &.{"strong"}, .{
+            .text_children = options.text_children,
+            .ignore_paragraph_start = options.ignore_paragraph_start,
+            .ignore_paragraph_end = true,
+            .ignore_paragraph_children_end = true,
+        }),
+        .italic => append(state, &.{"em"}, .{
+            .text_children = options.text_children,
+            .ignore_paragraph_start = options.ignore_paragraph_start,
+            .ignore_paragraph_end = true,
+            .ignore_paragraph_children_end = true,
+        }),
+        .bold_italic => append(state, &.{ "strong", "em" }, .{
+            .text_children = options.text_children,
+            .ignore_paragraph_start = options.ignore_paragraph_start,
+            .ignore_paragraph_end = true,
+            .ignore_paragraph_children_end = true,
+        }),
+        .blockquote => append(state, &.{"blockquote"}, .{
+            .text_children = false,
+            .ignore_paragraph_start = true,
+            .ignore_paragraph_end = true,
+        }),
+        .ordered_list, .unordered_list => appendList(state, .{
+            .text_children = false,
+            .ignore_paragraph_start = true,
+            .ignore_paragraph_end = true,
+        }),
         .code => append(state, &.{"code"}, .{
             .text_children = true,
             .ignore_paragraph_start = true,
             .ignore_paragraph_end = true,
+            .ignore_paragraph_children_end = true,
         }),
         .code_block => append(state, &.{ "pre", "code" }, .{
             .text_children = true,
@@ -76,6 +123,7 @@ fn appendToken(
                 .text_children = true,
                 .ignore_paragraph_start = options.ignore_paragraph_start,
                 .ignore_paragraph_end = options.ignore_paragraph_end,
+                .ignore_paragraph_children_end = true,
             });
             try state.html.writeByte('$');
         },
@@ -116,10 +164,12 @@ fn append(
     comptime options: CompileOptions,
 ) error{OutOfMemory}!void {
     assert(state.tokens.len > state.current);
-    const has_children = std.meta.activeTag(state.tokens[state.current].value) == .children;
+    const token = state.tokens[state.current];
+    const has_children = std.meta.activeTag(token.value) == .children;
 
     if (tags) |t| {
         if (!options.ignore_paragraph_end and state.is_in_paragraph) try endParagraph(state);
+        if (!options.ignore_paragraph_start and !state.is_in_paragraph) try startParagraph(state);
         inline for (t) |tag| {
             try state.html.writeAll("<" ++ tag ++ ">");
         }
@@ -129,14 +179,17 @@ fn append(
         var s = CompileState{
             .allocator = state.allocator,
             .html = state.html,
-            .tokens = state.tokens[state.current].value.children.tokens,
+            .tokens = token.value.children.tokens,
+            .is_in_paragraph = state.is_in_paragraph,
         };
         while (s.current < s.tokens.len) : (s.current += 1) {
             try appendToken(&s, options);
         }
+        if (!options.ignore_paragraph_children_end and s.is_in_paragraph) try endParagraph(&s);
     } else {
-        try state.tokens[state.current].writeLexeme(state.html);
+        try token.writeLexeme(state.html);
     }
+    if (token.has_following_space) try state.html.writeByte(' ');
 
     if (tags) |t| {
         const reverse_tags = comptime blk: {
@@ -156,6 +209,9 @@ fn appendBreak(
     comptime options: CompileOptions,
 ) error{OutOfMemory}!void {
     if (!options.ignore_paragraph_end and state.is_in_paragraph) try endParagraph(state);
+    if (state.current + 1 < state.tokens.len and
+        state.tokens[state.current + 1].token_type == .horizontal_rule)
+        return;
     try state.html.writeAll(if (should_compress) "<br/>" else "\n<br/>\n");
 }
 
@@ -178,10 +234,15 @@ fn appendList(
         .allocator = state.allocator,
         .html = state.html,
         .tokens = token.value.children.tokens,
+        .is_in_paragraph = false,
     };
 
-    while (list_state.current < list_state.tokens.len) : (list_state.current += 1)
-        try append(&list_state, &.{"li"}, .{});
+    while (list_state.current < list_state.tokens.len) : (list_state.current += 1) {
+        try append(&list_state, &.{"li"}, .{
+            .ignore_paragraph_start = true,
+        });
+        if (!should_compress) try state.html.writeByte('\n');
+    }
 
     try state.html.writeAll(if (is_ordered) @as([]const u8, "</ol>") else "</ul>");
     if (!should_compress) try state.html.writeByte('\n');
