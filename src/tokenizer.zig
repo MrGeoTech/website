@@ -3,52 +3,7 @@ const lexer = @import("lexer.zig");
 
 const Allocator = std.mem.Allocator;
 const LexemeList = std.ArrayList(lexer.Lexeme);
-pub const TokenList = struct {
-    tokens: []Token = &.{},
-
-    pub fn of(lexemes: LexemeList, comptime children_type: ?TokenType) !TokenList {
-        const tokens = TokenList{
-            .tokens = try lexemes.allocator.alloc(Token, lexemes.items.len),
-        };
-
-        for (lexemes.items, 0..) |lexeme, i| {
-            tokens.tokens[i] = Token.of(lexeme, children_type);
-        }
-
-        return tokens;
-    }
-
-    pub fn insert(self: *TokenList, allocator: Allocator, token: Token) error{OutOfMemory}!void {
-        self.tokens = try allocator.realloc(self.tokens, self.tokens.len + 1);
-        std.mem.copyBackwards(Token, self.tokens[1..], self.tokens[0 .. self.tokens.len - 1]);
-        self.tokens[0] = token;
-    }
-
-    pub fn append(self: *TokenList, allocator: Allocator, token: Token) error{OutOfMemory}!void {
-        return self.appendAll(allocator, &.{token});
-    }
-
-    pub fn appendAll(self: *TokenList, allocator: Allocator, tokens: []const Token) error{OutOfMemory}!void {
-        const old_len = self.tokens.len;
-        self.tokens = try allocator.realloc(self.tokens, self.tokens.len + tokens.len);
-        @memcpy(self.tokens[old_len..], tokens);
-    }
-
-    pub fn removeLast(self: *TokenList, allocator: Allocator) error{OutOfMemory}!void {
-        self.tokens = try allocator.realloc(self.tokens, self.tokens.len - 1);
-    }
-
-    pub fn deinit(self: TokenList, allocator: Allocator) void {
-        for (self.tokens) |token| {
-            switch (token.value) {
-                .children => |children| children.deinit(allocator),
-                else => {},
-            }
-        }
-
-        allocator.free(self.tokens);
-    }
-};
+pub const TokenList = std.ArrayListUnmanaged(Token);
 const TokenizeError = error{OutOfMemory};
 
 const eql = std.mem.eql;
@@ -148,25 +103,41 @@ pub const Token = struct {
         try std.testing.expectEqual(false, token.has_following_space);
     }
 
-    pub fn writeLexeme(self: Token, writer: anytype) @TypeOf(writer).Error!void {
+    pub fn writeLexeme(
+        self: Token,
+        writer: anytype,
+        comptime ignore_special_chars: bool,
+    ) @TypeOf(writer).Error!void {
         switch (self.value) {
             .lexeme => |lexeme| {
-                _ = try writer.write(lexeme);
+                _ = if (ignore_special_chars)
+                    try writer.write(lexeme)
+                else
+                    try switch (self.token_type) {
+                        .html_start => writer.write("&lt"),
+                        .html_end => writer.write("&gt"),
+                        .ampersand => writer.write("&amp"),
+                        else => writer.write(lexeme),
+                    };
             },
             .children => |children| {
-                for (children.tokens) |token| {
-                    try token.writeLexeme(writer);
+                for (children.items) |token| {
+                    try token.writeLexeme(writer, ignore_special_chars);
                     if (token.has_following_space) try writer.writeByte(' ');
                 }
             },
         }
     }
 
-    pub fn getLexeme(self: Token, allocator: Allocator) error{OutOfMemory}![]const u8 {
+    pub fn getLexeme(
+        self: Token,
+        allocator: Allocator,
+        comptime ignore_special_chars: bool,
+    ) error{OutOfMemory}![]const u8 {
         var temp_lexeme = try std.ArrayList(u8).initCapacity(allocator, 1024);
         defer temp_lexeme.deinit();
 
-        try self.writeLexeme(temp_lexeme.writer());
+        try self.writeLexeme(temp_lexeme.writer(), ignore_special_chars);
 
         return allocator.dupe(u8, temp_lexeme.items);
     }
@@ -188,33 +159,33 @@ pub const Token = struct {
         };
         var children_token = Token{
             .token_type = .text,
-            .value = .{ .children = TokenList{
-                .tokens = try std.testing.allocator.dupe(Token, &[_]Token{ lexeme_token1, lexeme_token2 }),
-            } },
+            .value = .{ .children = TokenList.fromOwnedSlice(
+                try std.testing.allocator.dupe(Token, &[_]Token{ lexeme_token1, lexeme_token2 }),
+            ) },
             .line = 1,
             .has_following_space = false,
         };
         defer children_token.value.children.deinit(std.testing.allocator);
 
-        const lexeme1 = try lexeme_token1.getLexeme(std.testing.allocator);
+        const lexeme1 = try lexeme_token1.getLexeme(std.testing.allocator, false);
         defer std.testing.allocator.free(lexeme1);
         try std.testing.expectEqualStrings("Hello", lexeme1);
-        const lexeme2 = try lexeme_token2.getLexeme(std.testing.allocator);
+        const lexeme2 = try lexeme_token2.getLexeme(std.testing.allocator, false);
         defer std.testing.allocator.free(lexeme2);
         try std.testing.expectEqualStrings("World", lexeme2);
-        const lexeme3 = try children_token.getLexeme(std.testing.allocator);
+        const lexeme3 = try children_token.getLexeme(std.testing.allocator, false);
         defer std.testing.allocator.free(lexeme3);
         try std.testing.expectEqualStrings("Hello World", lexeme3);
 
         // No need for a deinit because nothing is every actually allocated.
         const special_case_token = Token{
             .token_type = .text,
-            .value = .{ .children = TokenList{} },
+            .value = .{ .children = try TokenList.initCapacity(std.testing.allocator, 2) },
             .line = 1,
             .has_following_space = false,
         };
 
-        try std.testing.expectEqualStrings("", try special_case_token.getLexeme(std.testing.allocator));
+        try std.testing.expectEqualStrings("", try special_case_token.getLexeme(std.testing.allocator, false));
     }
 
     pub fn write(self: Token, writer: anytype) !void {
@@ -240,9 +211,9 @@ pub const Token = struct {
                 }
             },
             .children => |children| blk: {
-                if (children.tokens.len == 0) break :blk;
+                if (children.items.len == 0) break :blk;
                 try writer.writeByte('\n');
-                for (children.tokens) |child| {
+                for (children.items) |child| {
                     try child.writeIndented(writer, indents + 1);
                     try writer.writeByte('\n');
                 }
@@ -286,9 +257,9 @@ pub const Token = struct {
         };
         var children_token = Token{
             .token_type = .text,
-            .value = .{ .children = TokenList{
-                .tokens = try std.testing.allocator.dupe(Token, &[_]Token{ lexeme_token1, lexeme_token2 }),
-            } },
+            .value = .{ .children = TokenList.fromOwnedSlice(
+                try std.testing.allocator.dupe(Token, &[_]Token{ lexeme_token1, lexeme_token2 }),
+            ) },
             .line = 1,
             .has_following_space = false,
         };
@@ -305,6 +276,19 @@ pub const Token = struct {
             ",line:1,has_following_space:false}", output.items);
     }
 };
+
+pub fn tokenListOfLexemes(
+    lexemes: LexemeList,
+    comptime children_type: ?TokenType,
+) error{OutOfMemory}!TokenList {
+    var tokens = try TokenList.initCapacity(lexemes.allocator, lexemes.items.len);
+
+    for (lexemes.items) |lexeme| {
+        tokens.append(lexemes.allocator, Token.of(lexeme, children_type)) catch unreachable;
+    }
+
+    return tokens;
+}
 
 const TokenizerState = struct {
     allocator: Allocator,
@@ -413,11 +397,11 @@ const TokenizerState = struct {
         var children = if (tokenize_children)
             try tokenize(lexemes)
         else
-            try TokenList.of(lexemes, children_type);
+            try tokenListOfLexemes(lexemes, children_type);
         errdefer children.deinit(self.allocator);
 
         if (has_leading_space)
-            try children.insert(self.allocator, .{
+            try children.insert(self.allocator, 0, .{
                 .token_type = .text,
                 .value = .{ .lexeme = "" },
                 .line = self.lexemes[self.current].line,
@@ -441,7 +425,7 @@ const TokenizerState = struct {
 
     fn addCurrentAs(self: *TokenizerState, comptime token_type: TokenType) error{OutOfMemory}!void {
         try self.tokens.append(self.allocator, Token.of(self.lexemes[self.current], null));
-        self.tokens.tokens[self.tokens.tokens.len - 1].token_type = token_type;
+        self.tokens.items[self.tokens.items.len - 1].token_type = token_type;
         self.current += 1;
     }
 
@@ -553,8 +537,8 @@ const TokenizerState = struct {
                 if (lexeme.lexeme_type == .blockquote) {
                     is_on_newline = false;
                     self.current += 1;
-                } else if (!lexeme.lexeme_type.isEscapeable()) {
-                    self.current += 1;
+                } else if (lexeme.lexeme_type == .text) {
+                    is_on_newline = false;
                 } else break;
             } else {
                 try lexemes.append(lexeme);
@@ -564,9 +548,7 @@ const TokenizerState = struct {
         }
 
         if (self.current != self.lexemes.len) {
-            // Go to start of next line
-            while (!self.lexemes[self.current].lexeme_type.isNewLine()) self.current -= 1;
-            self.current += 1;
+            self.current -= 1;
         }
         // Remove last newline from lexemes
         _ = lexemes.orderedRemove(lexemes.items.len - 1);
@@ -585,7 +567,7 @@ const TokenizerState = struct {
         assert(start_lexeme.lexeme_type == .ordered_list or
             start_lexeme.lexeme_type == .unordered_list);
 
-        var children = TokenList{ .tokens = &.{} };
+        var children = try TokenList.initCapacity(self.allocator, 2);
         errdefer children.deinit(self.allocator);
 
         while (self.current < self.lexemes.len and
@@ -603,15 +585,15 @@ const TokenizerState = struct {
 
                 if (is_on_newline and (lexeme.lexeme_type == start_lexeme.lexeme_type or
                     (self.current + 1 < self.lexemes.len and
-                    lexeme.lexeme_type == .newline and
-                    self.lexemes[self.current + 1].lexeme_type != .indent))) break;
+                        lexeme.lexeme_type == .newline and
+                        self.lexemes[self.current + 1].lexeme_type != .indent))) break;
 
                 if (!(is_on_newline and lexeme.lexeme_type == .indent)) try lexemes.append(lexeme);
                 is_on_newline = lexeme.lexeme_type.isNewLine();
                 self.current += 1;
             }
 
-            const tokens = try tokenize(lexemes);
+            var tokens = try tokenize(lexemes);
             errdefer tokens.deinit(lexemes.allocator);
 
             try children.append(self.allocator, .{
@@ -622,6 +604,8 @@ const TokenizerState = struct {
             });
         }
 
+        self.current -= 1;
+
         try self.tokens.append(self.allocator, .{
             .token_type = start_lexeme.lexeme_type,
             .value = .{ .children = children },
@@ -629,13 +613,14 @@ const TokenizerState = struct {
             .has_following_space = self.lexemes[self.current - 1].has_following_space,
         });
     }
+
     fn addBlock(self: *TokenizerState) TokenizeError!void {
         assert(self.current <= self.lexemes.len);
         const start_lexeme = self.lexemes[self.current];
         assert(start_lexeme.lexeme_type == .code_block or
             start_lexeme.lexeme_type == .math_block);
 
-        var children = TokenList{ .tokens = &.{} };
+        var children = try TokenList.initCapacity(self.allocator, 2);
         errdefer children.deinit(self.allocator);
 
         self.current += 1;
@@ -666,7 +651,8 @@ const TokenizerState = struct {
             self.current += 1;
         }
 
-        try children.removeLast(self.allocator);
+        children.shrinkRetainingCapacity(children.items.len - 1);
+        children.items[children.items.len - 1].has_following_space = false;
 
         try self.tokens.append(self.allocator, .{
             .token_type = start_lexeme.lexeme_type,
@@ -683,7 +669,7 @@ const TokenizerState = struct {
         assert(self.lexemes[self.current].lexeme_type == .indent);
         const line = self.lexemes[self.current].line;
 
-        var children = TokenList{ .tokens = &.{} };
+        var children = try TokenList.initCapacity(self.allocator, 2);
         errdefer children.deinit(self.allocator);
 
         self.current += 1;
@@ -708,6 +694,9 @@ const TokenizerState = struct {
             is_on_newline = lexeme.lexeme_type.isNewLine();
             self.current += 1;
         }
+
+        children.shrinkRetainingCapacity(children.items.len - 1);
+        children.items[children.items.len - 1].has_following_space = false;
 
         try self.tokens.append(self.allocator, .{
             .token_type = .code_block,
@@ -776,7 +765,7 @@ const TokenizerState = struct {
 
         if (self.lexemes[self.current + 1 + alt_len].lexeme_type != .alt_end or
             (self.current + alt_len + 2 < self.lexemes.len and
-            self.lexemes[self.current + alt_len + 2].lexeme_type != .url_start))
+                self.lexemes[self.current + alt_len + 2].lexeme_type != .url_start))
             return error.InvalidLink;
 
         var url_len: usize = 0;
@@ -794,7 +783,7 @@ const TokenizerState = struct {
         if (url_len == 0 or end_lexeme.lexeme_type != .url_end)
             return error.InvalidLink;
 
-        var children = TokenList{ .tokens = &.{} };
+        var children = try TokenList.initCapacity(self.allocator, 2);
         errdefer children.deinit(self.allocator);
 
         try children.append(self.allocator, .{
@@ -848,7 +837,7 @@ pub fn tokenize(lexemes: LexemeList) TokenizeError!TokenList {
     var state = TokenizerState{
         .allocator = lexemes.allocator,
         .lexemes = lexemes.items,
-        .tokens = TokenList{},
+        .tokens = try TokenList.initCapacity(lexemes.allocator, 2),
     };
 
     while (state.current < state.lexemes.len) {
@@ -871,33 +860,33 @@ test "tokenize" {
     const lexemes = try lexer.process(std.testing.allocator, markdown);
     defer lexemes.deinit();
 
-    const tokens = try tokenize(lexemes);
+    var tokens = try tokenize(lexemes);
     defer tokens.deinit(lexemes.allocator);
 
-    try std.testing.expectEqual(7, tokens.tokens.len);
+    try std.testing.expectEqual(7, tokens.items.len);
 }
 
 test "tokenize Italic Followed By Newline" {
     const lexemes = try lexer.process(std.testing.allocator, "*test*\ntest");
     defer lexemes.deinit();
 
-    const tokens = try tokenize(lexemes);
+    var tokens = try tokenize(lexemes);
     defer tokens.deinit(lexemes.allocator);
 
-    try std.testing.expectEqual(2, tokens.tokens.len);
-    try std.testing.expectEqual(.italic, tokens.tokens[0].token_type);
-    try std.testing.expectEqual(.children, std.meta.activeTag(tokens.tokens[0].value));
+    try std.testing.expectEqual(2, tokens.items.len);
+    try std.testing.expectEqual(.italic, tokens.items[0].token_type);
+    try std.testing.expectEqual(.children, std.meta.activeTag(tokens.items[0].value));
 
-    const children = tokens.tokens[0].value.children;
+    const children = tokens.items[0].value.children;
     try std.testing.expectEqual(1, children.tokens.len);
     try std.testing.expectEqual(.text, children.tokens[0].token_type);
     try std.testing.expectEqual(.lexeme, std.meta.activeTag(children.tokens[0].value));
     try std.testing.expectEqualStrings("test", children.tokens[0].value.lexeme);
     try std.testing.expectEqual(1, children.tokens[0].line);
 
-    try std.testing.expectEqual(1, tokens.tokens[0].line);
-    try std.testing.expectEqual(.text, tokens.tokens[1].token_type);
-    try std.testing.expectEqual(.lexeme, std.meta.activeTag(tokens.tokens[1].value));
-    try std.testing.expectEqualStrings("test", tokens.tokens[1].value.lexeme);
-    try std.testing.expectEqual(2, tokens.tokens[1].line);
+    try std.testing.expectEqual(1, tokens.items[0].line);
+    try std.testing.expectEqual(.text, tokens.items[1].token_type);
+    try std.testing.expectEqual(.lexeme, std.meta.activeTag(tokens.items[1].value));
+    try std.testing.expectEqualStrings("test", tokens.items[1].value.lexeme);
+    try std.testing.expectEqual(2, tokens.items[1].line);
 }

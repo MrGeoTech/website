@@ -307,16 +307,20 @@ const LexerState = struct {
         if (state.current > state.markdown.len) return;
         if (state.start >= state.current) return;
 
-        const has_following_space = if (state.current < state.markdown.len) blk: {
+        const has_following_space = state.current < state.markdown.len and blk: {
             const char = state.markdown[state.current];
-            break :blk char == ' ' or char == '\n' or char == '\t' or char == '\r';
-        } else false;
+            break :blk char == ' ' or char == '\t' or char == '\r';
+        };
+        const has_following_single_newline = state.current < state.markdown.len and
+            state.markdown[state.current] == '\n' and
+            state.current + 1 < state.markdown.len and
+            state.markdown[state.current + 1] != '\n';
 
         try state.lexemes.append(.{
             .lexeme_type = lexeme_type,
             .value = state.markdown[state.start..state.current],
             .line = state.line,
-            .has_following_space = has_following_space,
+            .has_following_space = has_following_space or has_following_single_newline,
         });
         state.start = state.current;
     }

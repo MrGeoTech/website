@@ -29,6 +29,7 @@ html {
     justify-content: center;
     align-items: start;
     background: linear-gradient(to bottom, rgb(36, 41, 31), rgb(18, 20, 15));
+    font-size: 18px;
 }
 
 body {
@@ -63,13 +64,9 @@ up {
 }
 
 #terminal {
-    min-height: 100%;
-    max-width: 100%;
-    overflow: auto;
-}
-
-#terminal:-webkit-scrollbar {
-    display: none;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
 }
 
 #terminal::after {
@@ -80,17 +77,27 @@ up {
     width: 100%;
     height: 200%;
     background: repeating-linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 1),
-    rgba(0, 0, 0, 1) 3px,
-    transparent 6px,
-    transparent 9px
+        to bottom,
+        rgba(0, 0, 0, 1),
+        rgba(0, 0, 0, 1) 3px,
+        transparent 6px,
+        transparent 9px
     );
     opacity: 0.2;
     pointer-events: none;
     overflow: hidden;
 
     animation: scanlines 150s linear infinite;
+}
+
+#content {
+    display: block;
+    height: 100%;
+    width: 80vw;
+    margin: 0 auto;
+    overflow-x: hidden; /* Prevent horizontal scrolling */
+    word-wrap: break-word; /* Ensure words break properly */
+    overflow-wrap: break-word; /* Ensure content wraps properly */
 }
 
 @keyframes scanlines {
@@ -118,9 +125,11 @@ up {
 }
 
 p {
+    max-width: 80vw;
     white-space: pre;
     font-size: 1rem;
     margin: 0;
+    text-wrap-mode: wrap;
 }
 
 /* Markdown Elements Styling for Terminal Aesthetic */
@@ -128,35 +137,43 @@ h1, h2, h3, h4, h5, h6 {
     font-weight: bold;
     margin: 0;
     text-shadow: var(--text) 0 0 3px;
-    line-height: 2rem;
+    line-height: 3rem;
+    margin: 0.1rem 0;
 }
 
-h1 { font-size: 2rem; }
-h2 { font-size: 1.75rem; }
+h1 { font-size: 3rem; }
+h2 { font-size: 2rem; }
 h3 { font-size: 1.5rem; }
 h4 { font-size: 1.25rem; }
 h5 { font-size: 1rem; }
 h6 { font-size: 1rem; font-style: italic; }
 
 p, blockquote, pre, code, ul, ol, table {
-    margin: 0;
+    margin: 0.1rem 0;
     line-height: 1rem;
     font-size: 1rem;
     color: var(--text);
 }
 
-pre, code {
-    background: rgba(0, 255, 0, 0.05);
-    padding: 0.5rem;
-    border-radius: 0.5rem;
-    overflow-x: auto;
+code {
+    background: rgb(24, 65, 16);
+    padding: 0.1rem;
+    border-radius: 0.3rem;
+    white-space: pre-wrap; /* Allows text to wrap */
+    word-break: break-word; /* Forces words to break if necessary */
+    overflow-x: auto; /* Allows scrolling only when necessary */
+}
+
+pre > code {
+    display: block;
+    width: 100%;
+    padding: 1rem;
 }
 
 blockquote {
     background: rgba(0, 255, 0, 0.05);
     border-left: 2px solid var(--text);
-    padding-left: 1rem;
-    opacity: 0.8;
+    padding: 1rem;
 }
 
 ul, ol {
@@ -175,12 +192,17 @@ a {
 table {
     border-collapse: collapse;
     width: 100%;
+    max-width: 100%;
+    table-layout: fixed; /* Prevents columns from expanding too much */
+    word-wrap: break-word;
 }
 
 td, th {
     border: 1px solid var(--text);
     padding: 0.5rem;
     text-align: left;
+    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 hr {

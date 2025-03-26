@@ -203,6 +203,12 @@ fn serveVI(self: *Router, request: Request) void {
     const tokens = @import("tokenizer.zig").tokenize(lexemes) catch |err|
         return self.handleError(request, err);
 
+    var writer = std.io.getStdOut().writer();
+    for (tokens.items) |token| {
+        token.write(writer) catch unreachable;
+        writer.writeByte('\n') catch unreachable;
+    }
+
     const html = @import("compiler2.zig").compile(allocator, tokens, .{}) catch |err|
         return self.handleError(request, err);
 
@@ -300,7 +306,7 @@ fn serveCD(self: *Router, request: Request) void {
     defer json.deinit();
 
     if (json.value.location.len < 1) return self.handleError(request, error.BadRequest);
-    const location = json.value.location;
+    const location = if (json.value.location[0] == '/') json.value.location[1..] else json.value.location;
 
     // Make sure the directory is valid (exists and is in a valid location)
     const real_path = getRealpath(self.allocator, self.docs_dir, self.docs_dir_path, location) catch |err|

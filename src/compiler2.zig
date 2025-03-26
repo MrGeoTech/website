@@ -16,6 +16,7 @@ pub const CompileOptions = struct {
     ignore_paragraph_start: bool = false,
     ignore_paragraph_end: bool = false,
     ignore_paragraph_children_end: bool = false,
+    children_default_options: bool = false,
 };
 
 const assert = std.debug.assert;
@@ -30,18 +31,14 @@ pub fn compile(
     var html = try std.ArrayList(u8).initCapacity(allocator, 1024);
     defer html.deinit();
 
-    try html.appendSlice("<div id=\"markdown\">");
-
     var state = CompileState{
         .allocator = html.allocator,
         .html = html.writer(),
-        .tokens = tokens.tokens,
+        .tokens = tokens.items,
     };
-    while (state.current < tokens.tokens.len) : (state.current += 1) {
+    while (state.current < tokens.items.len) : (state.current += 1) {
         try appendToken(&state, options);
     }
-
-    try html.appendSlice("</div>");
 
     return allocator.dupe(u8, html.items);
 }
@@ -51,7 +48,8 @@ fn appendToken(
     comptime options: CompileOptions,
 ) error{OutOfMemory}!void {
     assert(state.current < state.tokens.len);
-    try switch (state.tokens[state.current].token_type) {
+    const token = state.tokens[state.current];
+    try switch (token.token_type) {
         .metadata => return,
         .header_1 => append(state, &.{"h1"}, .{
             .ignore_paragraph_start = true,
@@ -100,11 +98,13 @@ fn appendToken(
             .text_children = false,
             .ignore_paragraph_start = true,
             .ignore_paragraph_end = true,
+            .children_default_options = true,
         }),
         .ordered_list, .unordered_list => appendList(state, .{
             .text_children = false,
             .ignore_paragraph_start = true,
             .ignore_paragraph_end = true,
+            .children_default_options = true,
         }),
         .code => append(state, &.{"code"}, .{
             .text_children = true,
@@ -118,21 +118,24 @@ fn appendToken(
             .ignore_paragraph_end = options.ignore_paragraph_end,
         }),
         .math => {
+            if (!options.ignore_paragraph_start and !state.is_in_paragraph) try startParagraph(state);
             try state.html.writeByte('$');
             try append(state, &.{}, .{
                 .text_children = true,
-                .ignore_paragraph_start = options.ignore_paragraph_start,
-                .ignore_paragraph_end = options.ignore_paragraph_end,
+                .ignore_paragraph_start = true,
+                .ignore_paragraph_end = true,
                 .ignore_paragraph_children_end = true,
             });
             try state.html.writeByte('$');
         },
         .math_block => {
+            if (!options.ignore_paragraph_start and !state.is_in_paragraph) try startParagraph(state);
             try state.html.writeAll("$$\n");
             try append(state, &.{}, .{
                 .text_children = true,
-                .ignore_paragraph_start = options.ignore_paragraph_start,
-                .ignore_paragraph_end = options.ignore_paragraph_end,
+                .ignore_paragraph_start = true,
+                .ignore_paragraph_end = true,
+                .ignore_paragraph_children_end = true,
             });
             try state.html.writeAll("$$\n");
         },
@@ -142,6 +145,10 @@ fn appendToken(
         .ampersand => appendText(state, "&amp;", options),
         .html_start => appendText(state, "&lt;", options),
         .html_end => appendText(state, "&gt;", options),
+        .html => {
+            if (!options.ignore_paragraph_start and !state.is_in_paragraph) try startParagraph(state);
+            try token.writeLexeme(state.html, true);
+        },
         else => {
             try append(state, null, options);
         },
@@ -179,17 +186,16 @@ fn append(
         var s = CompileState{
             .allocator = state.allocator,
             .html = state.html,
-            .tokens = token.value.children.tokens,
+            .tokens = token.value.children.items,
             .is_in_paragraph = state.is_in_paragraph,
         };
         while (s.current < s.tokens.len) : (s.current += 1) {
-            try appendToken(&s, options);
+            try appendToken(&s, if (options.children_default_options) .{} else options);
         }
         if (!options.ignore_paragraph_children_end and s.is_in_paragraph) try endParagraph(&s);
     } else {
-        try token.writeLexeme(state.html);
+        try token.writeLexeme(state.html, false);
     }
-    if (token.has_following_space) try state.html.writeByte(' ');
 
     if (tags) |t| {
         const reverse_tags = comptime blk: {
@@ -202,6 +208,7 @@ fn append(
             try state.html.writeAll("</" ++ tag ++ ">");
         }
     }
+    if (token.has_following_space) try state.html.writeByte(' ');
 }
 
 fn appendBreak(
@@ -233,13 +240,16 @@ fn appendList(
     var list_state = CompileState{
         .allocator = state.allocator,
         .html = state.html,
-        .tokens = token.value.children.tokens,
+        .tokens = token.value.children.items,
         .is_in_paragraph = false,
     };
 
     while (list_state.current < list_state.tokens.len) : (list_state.current += 1) {
         try append(&list_state, &.{"li"}, .{
+            .text_children = options.text_children,
             .ignore_paragraph_start = true,
+            .ignore_paragraph_end = options.ignore_paragraph_end,
+            .children_default_options = options.children_default_options,
         });
         if (!should_compress) try state.html.writeByte('\n');
     }
@@ -263,11 +273,12 @@ fn appendImage(
 ) error{OutOfMemory}!void {
     assert(state.current < state.tokens.len);
     const token = state.tokens[state.current];
+    assert(token.token_type == .image);
     assert(std.meta.activeTag(token.value) == .children);
-    assert(token.value.children.tokens.len == 2);
+    assert(token.value.children.items.len == 2);
 
-    const alt_token = token.value.children.tokens[0];
-    const url_token = token.value.children.tokens[1];
+    const alt_token = token.value.children.items[0];
+    const url_token = token.value.children.items[1];
 
     assert(std.meta.activeTag(alt_token.value) == .lexeme);
     assert(std.meta.activeTag(url_token.value) == .lexeme);
@@ -286,11 +297,12 @@ fn appendLink(
 ) error{OutOfMemory}!void {
     assert(state.current < state.tokens.len);
     const token = state.tokens[state.current];
+    assert(token.token_type == .link);
     assert(std.meta.activeTag(token.value) == .children);
-    assert(token.value.children.tokens.len == 2);
+    assert(token.value.children.items.len == 2);
 
-    const alt_token = token.value.children.tokens[0];
-    const url_token = token.value.children.tokens[1];
+    const alt_token = token.value.children.items[0];
+    const url_token = token.value.children.items[1];
 
     assert(std.meta.activeTag(alt_token.value) == .lexeme);
     assert(std.meta.activeTag(url_token.value) == .lexeme);
