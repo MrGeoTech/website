@@ -4,25 +4,24 @@ const content = document.getElementById("content");
 const terminal = document.getElementById("terminal");
 
 const fetch_str = `
-__––___                    Name: Isaac George
-__/=======\\__                 Occupation: Student
-    /=============\\                Organization: North Dakota State University
-{===============}               Age: 19
-{=/    ‾‾‾‾    \\}               Major: Computer Engineering
-┌┤              ├┐              Interests: Programming, Server Administration,
-    {|  <0>    <0>  |}                         VLSI, Computing History, Music
-{|      /       |}              Languages: C, Zig, Java/Kotlin, VHDL, Verilog
-{|     ¨       /               Github: https://github.com/MrGeoTech/
-        \\_ \`~<≈≈>~\`  /\\               LinkedIn: https://www.linkedin.com/in/isaac-george-tech/
-        \\_      __/ |\\__
-        /|| \\___/  _/  | \\__
-        /‾‾ | \\      /    /    ‾––_
-    _––‾‾    \\  ‾\\__/‾    /         ‾
+          __––___                    Name: Isaac George
+       __/=======\\__                 Occupation: Student
+      /=============\\                Organization: North Dakota State University
+     {===============}               Age: 19
+     {=/    ‾‾‾‾    \\}               Major: Computer Engineering
+     ┌┤              ├┐              Interests: Programming, Server Administration,
+     {|  <0>    <0>  |}                         VLSI, Computing History, Music
+     {|      /       |}              Languages: C, Zig, Java, Kotlin, VHDL, Verilog
+      \\      ¨       /               Github: https://github.com/MrGeoTech/
+       \\_ \`~<≈≈>~\`  /\\               LinkedIn: https://www.linkedin.com/in/isaac-george-tech/
+         \\_      __/ |\\__
+        /||\\____/  _/  | \\__
+     /‾‾ | \\      /    /    ‾––_
+_––‾‾    \\  ‾\\__/‾    /         ‾
     `.replace("\n", "<br/>");
     var current_content = fetch_str + `
-
-    Hint: Type "help" for all commands
-    `.replace("\n", "<br/>");
+Hint: Type "help" for all commands
+`.replace("\n", "<br/>");
     var current_input = "";
     var current_path = "/";
     var current_suggestion = "";
