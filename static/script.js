@@ -80,7 +80,10 @@ Hint: Type "help" for all commands
     function updateContent() {
         content.innerHTML = "<p>" + current_content + "</p>"
         showCursor();
-        terminal.scrollTop = terminal.scrollHeight;
+        content.scrollTo({
+            top: content.scrollHeight,
+            behavior: 'instant'
+        });
     }
 
     function showCursor() {
