@@ -70,6 +70,7 @@ pub fn getRouter(self: *Router) !zap.Router {
     try router.handle_func("/vi", self, &serveVI);
     try router.handle_func("/ls", self, &serveLS);
     try router.handle_func("/cd", self, &serveCD);
+    try router.handle_func("/img", self, &serveImg);
 
     var current_path_array: [1024]u8 = undefined;
     const current_path: []u8 = current_path_array[0..0];
@@ -203,7 +204,7 @@ fn serveVI(self: *Router, request: Request) void {
     const tokens = @import("tokenizer.zig").tokenize(lexemes) catch |err|
         return self.handleError(request, err);
 
-    const html = @import("compiler2.zig").compile(allocator, tokens, .{}) catch |err|
+    const html = @import("compiler2.zig").compile(allocator, tokens, dir_path, .{}) catch |err|
         return self.handleError(request, err);
 
     // Response with result
@@ -310,6 +311,13 @@ fn serveCD(self: *Router, request: Request) void {
         return self.handleError(request, err);
     request.sendBody(real_path[self.docs_dir_path.len..]) catch |err|
         return self.handleError(request, err);
+}
+
+fn serveImg(self: *Router, request: Request) void {
+    request.parseBody() catch {};
+    request.parseQuery();
+
+    _ = self;
 }
 
 fn getRealpath(allocator: Allocator, dir: std.fs.Dir, dir_path: []const u8, path: []const u8) ![]const u8 {

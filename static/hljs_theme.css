@@ -1,0 +1,100 @@
+:root {
+    --base: 88, 145, 88;
+}
+
+/* Custom Highlight.js theme */
+.hljs {
+    color: rgb(73, 167, 50);
+    background: rgb(24, 65, 16);
+}
+
+.hljs ::selection,
+.hljs::selection {
+    background: var(--selection-background);
+    color: var(--selection-foreground);
+}
+
+/* Keywords, operators, and important elements */
+.hljs-keyword,
+.hljs-operator,
+.hljs-meta {
+    color: rgb(89, 164, 70);
+    font-weight: bold;
+}
+
+/* Strings, char literals */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet {
+    color: rgb(101, 184, 79);
+}
+
+/* Numbers, constants */
+.hljs-number,
+.hljs-literal {
+    color: #f2d79c;
+}
+
+/* Comments */
+.hljs-comment,
+.hljs-quote {
+    color: #7a9973;
+    font-style: italic;
+}
+
+/* Functions and method names */
+.hljs-title,
+.hljs-function {
+    color: #aad94c;
+}
+
+/* Class names, types */
+.hljs-class,
+.hljs-type {
+    color: #b8e986;
+    font-weight: bold;
+}
+
+/* Preprocessor directives, annotations */
+.hljs-meta {
+    color: #e0a672;
+    font-weight: bold;
+}
+
+/* Variables, properties */
+.hljs-variable,
+.hljs-attr,
+.hljs-property {
+    color: #f2b679;
+}
+
+/* Punctuation and delimiters */
+.hljs-punctuation {
+    color: var(--text);
+}
+
+/* Tags in HTML, XML */
+.hljs-tag {
+    color: #aad94c;
+    font-weight: bold;
+}
+
+/* Attributes in HTML, XML */
+.hljs-attribute {
+    color: #d4f48d;
+}
+
+/* Embedded languages */
+.hljs-subst {
+    color: #f2d79c;
+}
+
+/* Emphasized text */
+.hljs-emphasis {
+    font-style: italic;
+}
+
+/* Strong text */
+.hljs-strong {
+    font-weight: bold;
+}

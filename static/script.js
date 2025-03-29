@@ -1,4 +1,5 @@
 import renderMathInElement from "https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.mjs";
+import hljs from 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/es/highlight.min.js';
 
 const content = document.getElementById("content");
 const terminal = document.getElementById("terminal");
@@ -84,6 +85,7 @@ Hint: Type "help" for all commands
             top: content.scrollHeight,
             behavior: 'instant'
         });
+        hljs.highlightAll();
     }
 
     function showCursor() {
