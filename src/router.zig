@@ -409,9 +409,9 @@ fn handleError(self: *Router, request: Request, err: anyerror) void {
 }
 
 fn logStackTrace(allocator: Allocator) void {
-    var debug_info = std.debug.DebugInfo{
+    var debug_info = std.debug.SelfInfo{
         .allocator = allocator,
-        .address_map = std.AutoHashMap(usize, *std.debug.ModuleDebugInfo).init(allocator),
+        .address_map = std.AutoHashMap(usize, *std.debug.SelfInfo.Module).init(allocator),
         .modules = {},
     };
     defer debug_info.deinit();

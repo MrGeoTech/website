@@ -124,8 +124,8 @@ const PrintOutputLocation = struct {
         return print;
     }
 
-    fn make(step: *std.Build.Step, prog_node: std.Progress.Node) !void {
-        _ = prog_node;
+    fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
+        _ = options;
 
         const print: *PrintOutputLocation = @fieldParentPtr("step", step);
 
