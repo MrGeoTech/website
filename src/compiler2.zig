@@ -269,7 +269,7 @@ fn appendText(
     text: []const u8,
     comptime options: CompileOptions,
 ) error{OutOfMemory}!void {
-    if (!options.ignore_paragraph_end and state.is_in_paragraph) try endParagraph(state);
+    _ = options;
     try state.html.writeAll(text);
 }
 

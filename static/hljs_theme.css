@@ -8,17 +8,11 @@
     background: rgb(24, 65, 16);
 }
 
-.hljs ::selection,
-.hljs::selection {
-    background: var(--selection-background);
-    color: var(--selection-foreground);
-}
-
 /* Keywords, operators, and important elements */
 .hljs-keyword,
 .hljs-operator,
 .hljs-meta {
-    color: rgb(89, 164, 70);
+    color: rgb(56, 186, 24);
     font-weight: bold;
 }
 
@@ -45,19 +39,19 @@
 /* Functions and method names */
 .hljs-title,
 .hljs-function {
-    color: #aad94c;
+    color: rgb(73, 167, 50);
 }
 
 /* Class names, types */
 .hljs-class,
 .hljs-type {
-    color: #b8e986;
+    color: rgb(89, 164, 70);
     font-weight: bold;
 }
 
 /* Preprocessor directives, annotations */
 .hljs-meta {
-    color: #e0a672;
+    color: rgb(80, 198, 51);
     font-weight: bold;
 }
 
@@ -97,4 +91,8 @@
 /* Strong text */
 .hljs-strong {
     font-weight: bold;
+}
+
+.hljs {
+    color: rgb(111, 226, 83);
 }

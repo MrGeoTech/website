@@ -317,7 +317,19 @@ fn serveImg(self: *Router, request: Request) void {
     request.parseBody() catch {};
     request.parseQuery();
 
-    _ = self;
+    const img: zap.FreeOrNot = (request.getParamStr(self.allocator, "path", false) catch |err|
+        return self.handleError(request, err)) orelse return;
+    defer img.deinit();
+
+    const img_realpath = self.docs_dir.realpathAlloc(self.allocator, img.str) catch |err|
+        return self.handleError(request, err);
+    defer self.allocator.free(img_realpath);
+
+    if (!std.mem.startsWith(u8, img_realpath, self.docs_dir_path))
+        return self.handleError(request, error.IllegalArgument);
+
+    request.sendFile(img_realpath) catch |err|
+        return self.handleError(request, err);
 }
 
 fn getRealpath(allocator: Allocator, dir: std.fs.Dir, dir_path: []const u8, path: []const u8) ![]const u8 {
