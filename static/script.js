@@ -20,391 +20,413 @@ const fetch_str = `
      /‾‾ | \\      /    /    ‾––_
 _––‾‾    \\  ‾\\__/‾    /         ‾
     `.replace("\n", "<br/>");
-    var current_content = fetch_str + `
+var current_content = fetch_str + `
 Hint: Type "help" for all commands
 `.replace("\n", "<br/>");
-    var current_input = "";
-    var current_path = "/";
-    var current_suggestion = "";
+var current_input = "";
+var current_path = "/";
+var current_suggestion = "";
 
-    document.addEventListener("DOMContentLoaded", () => {
-        const logLines = [
-            "Website kernel booting...",
-            "[ OK ] CPU: Initializing processor...",
-            "[ OK ] CPU: Detected 8 cores, enabling multi-threading...",
-            "[ OK ] Memory: 16GB RAM detected, initializing...",
-            "[ OK ] ACPI: Power management interface initialized.",
-            "[ OK ] PCI: Scanning for devices...",
-            "[ OK ] SATA: Initializing disk controllers...",
-            "[ OK ] NVMe: SSD detected, mounting root filesystem...",
-            "[ OK ] USB: Initializing controllers...",
-            "[ OK ] USB: Device detected: Logitech Keyboard",
-            "[ OK ] USB: Device detected: Logitech Mouse",
-            "[ OK ] Network: Detecting available interfaces...",
-            "[ OK ] Network: eth0 connected, IP address assigned.",
-            "[ OK ] Audio: Initializing sound system...",
-            "[ OK ] ALSA: Audio driver loaded successfully.",
-            "[ OK ] GPU: Initializing graphics driver...",
-            "[ OK ] GPU: VRAM detected, enabling acceleration...",
-            "[ OK ] Filesystem: Checking disk integrity...",
-            "[ OK ] Filesystem: No errors found.",
-            "[ OK ] Security: Enabling AppArmor...",
-            "[ OK ] Systemd: Initializing system services...",
-            "[ OK ] SSH: Secure shell service starting...",
-            "[ OK ] HTTP: Web server detected, binding to port 80...",
-            "[ OK ] CRON: Scheduled tasks loaded.",
-            "[ OK ] System Time: Synchronizing with NTP server...",
-            "[ OK ] Swap: Enabling virtual memory...",
-            "[ OK ] User Login: Waiting for authentication...",
-            "Boot complete. <span style='font-weight: bold'>Welcome to my website!</span>"
-        ];
+document.addEventListener("DOMContentLoaded", () => {
+    const logLines = [
+        "Website kernel booting...",
+        "[ OK ] CPU: Initializing processor...",
+        "[ OK ] CPU: Detected 8 cores, enabling multi-threading...",
+        "[ OK ] Memory: 16GB RAM detected, initializing...",
+        "[ OK ] ACPI: Power management interface initialized.",
+        "[ OK ] PCI: Scanning for devices...",
+        "[ OK ] SATA: Initializing disk controllers...",
+        "[ OK ] NVMe: SSD detected, mounting root filesystem...",
+        "[ OK ] USB: Initializing controllers...",
+        "[ OK ] USB: Device detected: Logitech Keyboard",
+        "[ OK ] USB: Device detected: Logitech Mouse",
+        "[ OK ] Network: Detecting available interfaces...",
+        "[ OK ] Network: eth0 connected, IP address assigned.",
+        "[ OK ] Audio: Initializing sound system...",
+        "[ OK ] ALSA: Audio driver loaded successfully.",
+        "[ OK ] GPU: Initializing graphics driver...",
+        "[ OK ] GPU: VRAM detected, enabling acceleration...",
+        "[ OK ] Filesystem: Checking disk integrity...",
+        "[ OK ] Filesystem: No errors found.",
+        "[ OK ] Security: Enabling AppArmor...",
+        "[ OK ] Systemd: Initializing system services...",
+        "[ OK ] SSH: Secure shell service starting...",
+        "[ OK ] HTTP: Web server detected, binding to port 80...",
+        "[ OK ] CRON: Scheduled tasks loaded.",
+        "[ OK ] System Time: Synchronizing with NTP server...",
+        "[ OK ] Swap: Enabling virtual memory...",
+        "[ OK ] User Login: Waiting for authentication...",
+        "Boot complete. <span style='font-weight: bold'>Welcome to my website!</span>"
+    ];
 
-        let index = 0;
+    let index = 0;
 
-        function addLine() {
-            if (index < logLines.length) {
-                const p = document.createElement("p");
-                p.innerHTML = logLines[index];
-                content.appendChild(p);
+    function addLine() {
+        if (index < logLines.length) {
+            const p = document.createElement("p");
+            p.innerHTML = logLines[index];
+            content.appendChild(p);
 
-                index++;
-                let delay = index === 1 ? 500 : Math.exp(Math.random() * 7) / 100;
-                setTimeout(addLine, delay);
-            } else {
-                setTimeout(updateContent, 750);
-            }
+            index++;
+            let delay = index === 1 ? 500 : Math.exp(Math.random() * 7) / 100;
+            setTimeout(addLine, delay);
+        } else {
+            setTimeout(loadStartup, 750);
         }
-
-        addLine();
-    });
-
-    function updateContent() {
-        content.innerHTML = "<p>" + current_content + "</p>"
-        showCursor();
-        content.scrollTo({
-            top: content.scrollHeight,
-            behavior: 'instant'
-        });
-        hljs.highlightAll();
     }
 
-    function showCursor() {
-        const split = current_input.split(" ").filter(s => s.trim() !== "");
+    addLine();
+});
 
+function loadStartup() {
+    updateContent();
+    const url_path = new URL(window.location.href).searchParams.get("path");
+    if (url_path != null) {
+        fetchDocument(url_path);
+        current_content += "<p>" + current_path + " $ vi " + url_path + "</p>";
+    }
+}
+
+function updateContent() {
+    content.innerHTML = "<p>" + current_content + "</p>"
+    showCursor();
+    content.scrollTo({
+        top: content.scrollHeight,
+        behavior: 'instant'
+    });
+    hljs.highlightAll();
+}
+
+function showCursor() {
+    const split = current_input.split(" ").filter(s => s.trim() !== "");
+
+    const extra = split.slice(1).join(" ");
+
+    const html = `
+        <p>${current_path} $ ${current_input}<span id="cursor"></span><span id="suggestion">${current_suggestion.slice(extra.length)}</span></p>
+        `;
+    content.innerHTML += html;
+}
+
+document.addEventListener("keydown", (event) => {
+    event.preventDefault();
+    if (event.key.length == 1) {
+        current_input += event.key;
+    } else if (event.key == "Backspace") {
+        current_input = current_input.slice(0, -1);
+    } else if (event.key == "Enter") {
+        processCommand();
+    } else if (event.key == "Tab") {
+        const split = current_input.split(" ").filter(s => s.trim() !== "");
+        current_input = split[0] + " " + current_suggestion;
+    }
+    updateSuggestion();
+    updateContent();
+});
+
+/**
+    * Proccesses the current input and updates the state
+    * @returns {boolean} Returns true if this function using async and therefore will call updateContent()
+    */
+    function processCommand() {
+        // Add current command to content
+        current_content += "<p>" + current_path + " $ " + current_input + "</p>";
+
+        // Execute command
+        const split = current_input.split(" ").filter(s => s.trim() !== "");
+        if (split.length < 1) return;
+
+        const command = split[0];
         const extra = split.slice(1).join(" ");
 
-        const html = `
-            <p>${current_path} $ ${current_input}<span id="cursor"></span><span id="suggestion">${current_suggestion.slice(extra.length)}</span></p>
-            `;
-        content.innerHTML += html;
+        const location = (split.length < 2) ? "." : extra;
+
+        switch (command) {
+            case "help":
+                if (split.length == 1) {
+                    current_content += "<p>" + help_page + "</p>";
+                } else {
+                    if (extra == "help")
+                        current_content += "<p>" + help_page_help + "</p>";
+                    else if (extra == "cd")
+                        current_content += "<p>" + help_page_cd + "</p>";
+                    else if (extra == "fetch")
+                        current_content += "<p>" + help_page_fetch + "</p>";
+                    else if (extra == "ls")
+                        current_content += "<p>" + help_page_ls + "</p>";
+                    else if (extra == "vi")
+                        current_content += "<p>" + help_page_vi + "</p>";
+                    else
+                        current_content += "<p>Help page for " + 
+                            extra + 
+                            " does not exist! Try either \"help\", \"cd\", \"ls\", or \"vi\".</p>";
+                }
+                break;
+            case "clear":
+                current_content = "";
+                const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+                window.history.pushState({ path: newUrl }, '', newUrl);
+                break;
+            case "fetch":
+                current_content += "<p>" + fetch_str + "</p>";
+                break;
+            case "cd":
+                if (split.length < 2) {
+                    current_content += "<p>" + help_page_cd + "</p>";
+                    break;
+                }
+
+                fetch(
+                    "/cd",
+                    {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            location: (location.startsWith("/")) ? 
+                            location : 
+                            (current_path == "/") ? 
+                            ("./" + location) : 
+                            (current_path + "/" + location)
+                        })
+                    }
+                ).then((response) => {
+                    response.text().then(text => {
+                        console.log(text);
+                        if (response.ok)
+                            current_path = text;
+                        else
+                            current_content += "<p>" + text + "</p>";
+                        updateContent();
+                    });
+                }).catch((error) => {
+                    console.error("Error:", error);
+                    current_content += "<p>An error occured while trying to execute '" + split.join(" ") + "'!</p>";
+                    updateContent();
+                });
+                break;
+            case "ls":
+                fetch(
+                    "/ls",
+                    {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            location: (location.startsWith("/")) ? 
+                            location : 
+                            (current_path == "/") ? 
+                            ("/" + location) : 
+                            (current_path + "/" + location),
+                        })
+                    }
+
+                ).then((response) => {
+                    response.text().then(text => {
+                        current_content += "<p>" + text + "</p>";
+                        updateContent();
+                    });
+                }).catch((error) => {
+                    console.error("Error:", error);
+                    current_content += "<p>An error occured while trying to execute '" + split.join(" ") + "'!</p>";
+                    updateContent();
+                });
+                break;
+            case "vi":
+                fetchDocument(location);
+                break;
+            default:
+                current_content += "<p>" + current_input + ": command not found</p>";
+        }
+
+        current_input = "";
+        current_suggestion = "";
     }
 
-    document.addEventListener("keydown", (event) => {
-        event.preventDefault();
-        if (event.key.length == 1) {
-            current_input += event.key;
-        } else if (event.key == "Backspace") {
-            current_input = current_input.slice(0, -1);
-        } else if (event.key == "Enter") {
-            processCommand();
-        } else if (event.key == "Tab") {
-            const split = current_input.split(" ").filter(s => s.trim() !== "");
-            current_input = split[0] + " " + current_suggestion;
+function fetchDocument(path) {
+    const loc = (path.startsWith("/")) ? 
+        path : 
+            (current_path == "/") ? 
+            ("/" + path) : 
+            (current_path + "/" + path)
+    fetch(
+        "/vi",
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                location: loc,
+            })
         }
-        updateSuggestion();
+
+    ).then((response) => {
+        response.text().then(text => {
+            current_content += text;
+            updateContent();
+            renderMathInElement(document.body, {
+                delimiters: [
+                    {left: '$$', right: '$$', display: true},
+                    {left: '$', right: '$', display: false},
+                ],
+                throwOnError : false
+            });
+            const url_path = new URL(window.location.href).searchParams.get("path");
+            if (url_path != loc) {
+                const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?path=' + encodeURIComponent(loc);
+                window.history.pushState({ path: newUrl }, '', newUrl);
+            }
+        });
+    }).catch((error) => {
+        console.error("Error:", error);
+        current_content += "<p>An error occured while trying to execute '" + split.join(" ") + "'!</p>";
         updateContent();
     });
 
-    /**
-        * Proccesses the current input and updates the state
-        * @returns {boolean} Returns true if this function using async and therefore will call updateContent()
-        */
-        function processCommand() {
-            // Add current command to content
-            current_content += "<p>" + current_path + " $ " + current_input + "</p>";
+}
 
-            // Execute command
-            const split = current_input.split(" ").filter(s => s.trim() !== "");
-            if (split.length < 1) return;
+function updateSuggestion() {
+    const split = current_input.split(" ").filter(s => s.trim() !== "");
+    if (split.length < 2) return;
 
-            const command = split[0];
-            const extra = split.slice(1).join(" ");
+    const extra = split.slice(1).join(" ");
+    const path = extra.substring(0, extra.lastIndexOf("/"));
 
-            const location = (split.length < 2) ? "." : extra;
+    console.log(extra);
+    console.log(path);
 
-            switch (command) {
-                case "help":
-                    if (split.length == 1) {
-                        current_content += "<p>" + help_page + "</p>";
-                    } else {
-                        if (extra == "help")
-                            current_content += "<p>" + help_page_help + "</p>";
-                        else if (extra == "cd")
-                            current_content += "<p>" + help_page_cd + "</p>";
-                        else if (extra == "fetch")
-                            current_content += "<p>" + help_page_fetch + "</p>";
-                        else if (extra == "ls")
-                            current_content += "<p>" + help_page_ls + "</p>";
-                        else if (extra == "vi")
-                            current_content += "<p>" + help_page_vi + "</p>";
-                        else
-                            current_content += "<p>Help page for " + 
-                                extra + 
-                                " does not exist! Try either \"help\", \"cd\", \"ls\", or \"vi\".</p>";
-                    }
-                    break;
-                case "clear":
-                    current_content = "";
-                    break;
-                case "fetch":
-                    current_content += "<p>" + fetch_str + "</p>";
-                    break;
-                case "cd":
-                    if (split.length < 2) {
-                        current_content += "<p>" + help_page_cd + "</p>";
-                        break;
-                    }
-
-                    fetch(
-                        "/cd",
-                        {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                location: (location.startsWith("/")) ? 
-                                location : 
-                                (current_path == "/") ? 
-                                ("./" + location) : 
-                                (current_path + "/" + location)
-                            })
-                        }
-                    ).then((response) => {
-                        response.text().then(text => {
-                            console.log(text);
-                            if (response.ok)
-                                current_path = text;
-                            else
-                                current_content += "<p>" + text + "</p>";
-                            updateContent();
-                        });
-                    }).catch((error) => {
-                        console.error("Error:", error);
-                        current_content += "<p>An error occured while trying to execute '" + split.join(" ") + "'!</p>";
-                        updateContent();
-                    });
-                    break;
-                case "ls":
-                    fetch(
-                        "/ls",
-                        {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                location: (location.startsWith("/")) ? 
-                                location : 
-                                (current_path == "/") ? 
-                                ("./" + location) : 
-                                (current_path + "/" + location),
-                            })
-                        }
-
-                    ).then((response) => {
-                        response.text().then(text => {
-                            current_content += "<p>" + text + "</p>";
-                            updateContent();
-                        });
-                    }).catch((error) => {
-                        console.error("Error:", error);
-                        current_content += "<p>An error occured while trying to execute '" + split.join(" ") + "'!</p>";
-                        updateContent();
-                    });
-                    break;
-                case "vi":
-                    fetch(
-                        "/vi",
-                        {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                location: (location.startsWith("/")) ? 
-                                location : 
-                                (current_path == "/") ? 
-                                ("./" + location) : 
-                                (current_path + "/" + location),
-                            })
-                        }
-
-                    ).then((response) => {
-                        response.text().then(text => {
-                            current_content += text;
-                            updateContent();
-                            renderMathInElement(document.body, {
-                                delimiters: [
-                                    {left: '$$', right: '$$', display: true},
-                                    {left: '$', right: '$', display: false},
-                                ],
-                                throwOnError : false
-                            });
-                        });
-                    }).catch((error) => {
-                        console.error("Error:", error);
-                        current_content += "<p>An error occured while trying to execute '" + split.join(" ") + "'!</p>";
-                        updateContent();
-                    });
-                    break;
-                default:
-                    current_content += "<p>" + current_input + ": command not found</p>";
-            }
-
-            current_input = "";
-            current_suggestion = "";
+    fetch(
+        "/ls",
+        {
+            method: "POST",
+            headers: { "Content-Type": "text/plain" },
+            body: JSON.stringify({
+                location: ((current_path == "/") ? "." : current_path) + "/" + path,
+            })
         }
 
-    function updateSuggestion() {
-        const split = current_input.split(" ").filter(s => s.trim() !== "");
-        if (split.length < 2) return;
+    ).then((response) => {
+        response.text().then(text => {
+            const suggestions = text.split("\n").filter(s => s.trim() !== "");
+            const bestMatch = findBestMatch(extra, suggestions);
 
-        const extra = split.slice(1).join(" ");
-        const path = extra.substring(0, extra.lastIndexOf("/"));
-
-        console.log(extra);
-        console.log(path);
-
-        fetch(
-            "/ls",
-            {
-                method: "POST",
-                headers: { "Content-Type": "text/plain" },
-                body: JSON.stringify({
-                    location: ((current_path == "/") ? "." : current_path) + "/" + path,
-                })
-            }
-
-        ).then((response) => {
-            response.text().then(text => {
-                const suggestions = text.split("\n").filter(s => s.trim() !== "");
-                const bestMatch = findBestMatch(extra, suggestions);
-
-                current_suggestion = ((path != "") ? (path + "/") : "") + bestMatch;
-                updateContent();
-            });
-        }).catch((error) => {
-            console.error("Silent Error:", error);
+            current_suggestion = ((path != "") ? (path + "/") : "") + bestMatch;
+            updateContent();
         });
+    }).catch((error) => {
+        console.error("Silent Error:", error);
+    });
 
-    }
+}
 
-    function findBestMatch(input, suggestions) {
-        input = input.toLowerCase();
+function findBestMatch(input, suggestions) {
+    input = input.toLowerCase();
 
-        // Prioritize exact prefix matches
-        const prefixMatches = suggestions.filter(s => s.toLowerCase().startsWith(input));
-        if (prefixMatches.length > 0) return prefixMatches[0]; // Best match is the first prefix match
+    // Prioritize exact prefix matches
+    const prefixMatches = suggestions.filter(s => s.toLowerCase().startsWith(input));
+    if (prefixMatches.length > 0) return prefixMatches[0]; // Best match is the first prefix match
 
-        // If no prefix match, look for closest string using Levenshtein distance (fuzzy search)
-        return suggestions.reduce((best, current) => {
-            return levenshteinDistance(input, current) < levenshteinDistance(input, best) ? current : best;
-        }, suggestions[0]);
-    }
+    // If no prefix match, look for closest string using Levenshtein distance (fuzzy search)
+    return suggestions.reduce((best, current) => {
+        return levenshteinDistance(input, current) < levenshteinDistance(input, best) ? current : best;
+    }, suggestions[0]);
+}
 
-    // Basic Levenshtein distance implementation (used for fuzzy matching)
-    function levenshteinDistance(a, b) {
-        const dp = Array(a.length + 1).fill(null).map(() => Array(b.length + 1).fill(null));
+// Basic Levenshtein distance implementation (used for fuzzy matching)
+function levenshteinDistance(a, b) {
+    const dp = Array(a.length + 1).fill(null).map(() => Array(b.length + 1).fill(null));
 
-        for (let i = 0; i <= a.length; i++) dp[i][0] = i;
-        for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+    for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+    for (let j = 0; j <= b.length; j++) dp[0][j] = j;
 
-        for (let i = 1; i <= a.length; i++) {
-            for (let j = 1; j <= b.length; j++) {
-                const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-                dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
-            }
+    for (let i = 1; i <= a.length; i++) {
+        for (let j = 1; j <= b.length; j++) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
         }
-        return dp[a.length][b.length];
     }
+    return dp[a.length][b.length];
+}
 
-    const help_page = `
-    Available commands:
-        - help           : Shows all available commands
-        - help [command] : Shows the command's manual page (includes examples)
-        - clear          : Clears the terminal history
-        - fetch          : Shows the information shown on a website refresh
-        - cd [directory] : Changes the current location to the specified directory (folder)
-        - ls             : Lists all files and directories in the current directory
-        - vi [file]      : Opens a file to be read (read-only)
+const help_page = `
+Available commands:
+    - help           : Shows all available commands
+    - help [command] : Shows the command's manual page (includes examples)
+    - clear          : Clears the terminal history
+    - fetch          : Shows the information shown on a website refresh
+    - cd [directory] : Changes the current location to the specified directory (folder)
+    - ls             : Lists all files and directories in the current directory
+    - vi [file]      : Opens a file to be read (read-only)
+`.replace("\n", "<br/>");
+
+const help_page_help = `
+DESCRIPTION
+help - a command to instruct how to use other commands
+
+USAGES
+help
+help [command]
+
+EXAMPLES
+If you are unfamiliar with navigating on a command line, you
+might want to open up the help page for the "cd" command.
+
+    To do so, simply enter "help cd" to view the "cd" commands help page.
     `.replace("\n", "<br/>");
 
-    const help_page_help = `
-    DESCRIPTION
-    help - a command to instruct how to use other commands
+const help_page_clear = `
+DESCRIPTION
+clear - clear the terminal screen
 
-    USAGES
-    help
-    help [command]
+USAGES
+clear
+`;
 
-    EXAMPLES
-    If you are unfamiliar with navigating on a command line, you
-    might want to open up the help page for the "cd" command.
+const help_page_fetch = `
+DESCRIPTION
+fetch - displays an ascii art image of myself and information about myself
 
-        To do so, simply enter "help cd" to view the "cd" commands help page.
-        `.replace("\n", "<br/>");
+USAGES
+fetch
+`;
 
-    const help_page_clear = `
-    DESCRIPTION
-    clear - clear the terminal screen
+const help_page_cd = `
+DESCRIPTION
+cd - change the working directory
 
-    USAGES
-    clear
-    `;
+USAGES
+cd [directory]
 
-    const help_page_fetch = `
-    DESCRIPTION
-    fetch - displays an ascii art image of myself and information about myself
+EXAMPLES
+Assume you are at the location "/dir1" but you want to go into the
+directory "/dir2/subdir/". To do this, simply use the command
+"cd ../dir2/subdir".
 
-    USAGES
-    fetch
-    `;
+    There are two special directories, "." and "..", which reference
+the current directory and the parent directory respectively.
+    `.replace("\n", "<br/>");
 
-    const help_page_cd = `
-    DESCRIPTION
-    cd - change the working directory
+const help_page_ls = `
+DESCRIPTION
+ls - list directory contents
 
-    USAGES
-    cd [directory]
+USAGE
+ls
+ls [directory]
 
-    EXAMPLES
-    Assume you are at the location "/dir1" but you want to go into the
-    directory "/dir2/subdir/". To do this, simply use the command
-    "cd ../dir2/subdir".
+EXAMPLES
+To find a subdirectory or file, you can simply use the "ls" command.
+    To find a subdirectory or file in another directory, use the
+"ls [directory]" command.
+    `.replace("\n", "<br/>");
 
-        There are two special directories, "." and "..", which reference
-    the current directory and the parent directory respectively.
-        `.replace("\n", "<br/>");
+const help_page_vi = `
+DESCRIPTION
+vi - opens a file for viewing
 
-    const help_page_ls = `
-    DESCRIPTION
-    ls - list directory contents
+USAGE
+vi [file]
 
-    USAGE
-    ls
-    ls [directory]
+EXAMPLES
+To view the file "file.txt", you can use "vi file.txt".
 
-    EXAMPLES
-    To find a subdirectory or file, you can simply use the "ls" command.
-        To find a subdirectory or file in another directory, use the
-    "ls [directory]" command.
-        `.replace("\n", "<br/>");
-
-    const help_page_vi = `
-    DESCRIPTION
-    vi - opens a file for viewing
-
-    USAGE
-    vi [file]
-
-    EXAMPLES
-    To view the file "file.txt", you can use "vi file.txt".
-
-        Note: Unlike true vi, this is a read-only version that will open
-    files in a formatted way.
-        `.replace("\n", "<br/>");
+    Note: Unlike true vi, this is a read-only version that will open
+files in a formatted way.
+    `.replace("\n", "<br/>");

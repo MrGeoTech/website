@@ -152,7 +152,7 @@ fn serveVI(self: *Router, request: Request) void {
     const location = json.value.location[if (json.value.location[0] == '/') 1 else 0..];
 
     const dir_path_end = std.mem.lastIndexOfScalar(u8, location, '/') orelse 0;
-    const dir_path = location[0..dir_path_end];
+    const dir_path = if (dir_path_end == 0) "." else location[0..dir_path_end];
     std.log.debug("Dir: {s}", .{dir_path});
 
     // Make sure that the file is real and that the path is valid
@@ -171,13 +171,17 @@ fn serveVI(self: *Router, request: Request) void {
         const display_name = getFileName(allocator, dir, file.name) catch |err|
             return self.handleError(request, err);
 
-        std.log.debug("Display name: {s}\nFile name: {s}", .{ display_name, location[dir_path.len + 1 ..] });
-        if (eql(u8, display_name, location[dir_path.len + 1 ..])) {
+        std.log.debug("Display name: {s}\nFile name: {s}", .{ display_name, location[dir_path_end + 1 ..] });
+        if (eql(u8, display_name, location[dir_path_end + 1 ..])) {
             file_name = allocator.dupe(u8, file.name) catch |err|
                 return self.handleError(request, err);
+            std.log.debug("True", .{});
             break;
         }
+        std.log.debug("False", .{});
     }
+
+    std.log.debug("File Real Name: {s}", .{file_name});
 
     const file_real_path = allocator.alloc(
         u8,
@@ -189,7 +193,7 @@ fn serveVI(self: *Router, request: Request) void {
     file_real_path[dir_real_path.len] = '/';
     @memcpy(file_real_path[dir_real_path.len + 1 ..], file_name);
 
-    std.log.debug("{s}", .{file_real_path});
+    std.log.debug("File real path: {s}", .{file_real_path});
 
     // Read in file contents, max size 1 MiB
     const markdown = self.docs_dir.readFileAlloc(

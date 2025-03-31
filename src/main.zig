@@ -1,11 +1,6 @@
 const builtin = @import("builtin");
 const std = @import("std");
 const zap = @import("zap");
-const lexer = @import("lexer.zig");
-const tokenizer = @import("tokenizer.zig");
-const compiler = @import("compiler.zig");
-
-const ns_per_us = std.time.ns_per_us;
 
 const Router = @import("router.zig");
 const Allocator = std.mem.Allocator;
@@ -19,54 +14,6 @@ pub fn main() !void {
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
-
-    //var docs_dir = try std.fs.cwd().openDir("docs", .{});
-    //defer docs_dir.close();
-
-    //const markdown = try docs_dir.readFileAlloc(
-    //    allocator,
-    //    //"test.md",
-    //    "School/ECE 376: Embedded Systems/HW11.md",
-    //    1024 * 1024,
-    //);
-    //defer allocator.free(markdown);
-
-    ////const markdown = "## Test Header\nThat was a **test header**.\n**test\n\ntest  \ntesting";
-
-    //var timer = try std.time.Timer.start();
-    //const lexemes = try lexer.process(allocator, markdown);
-    //defer lexemes.deinit();
-    //const lexer_time = timer.read() / ns_per_us;
-
-    //const writer = std.io.getStdOut().writer();
-    //for (lexemes.items) |lexeme| {
-    //    try lexeme.write(writer);
-    //    try writer.writeByte('\n');
-    //}
-
-    //timer.reset();
-    //const tokens = try tokenizer.tokenize(lexemes);
-    //defer tokens.deinit(lexemes.allocator);
-    //const tokenize_time = timer.read() / ns_per_us;
-
-    //for (tokens.tokens) |token| {
-    //    try token.write(writer);
-    //    try writer.writeByte('\n');
-    //}
-
-    //timer.reset();
-    //const result = try compiler.compile(allocator, tokens);
-    //defer allocator.free(result);
-    //const compile_time = timer.read() / ns_per_us;
-
-    //std.log.info("{s}", .{result});
-
-    //std.log.info("Total Bytes: {d} bytes", .{markdown.len});
-    //std.log.info("Lexer Time: {d} us", .{lexer_time});
-    //std.log.info("Tokenize Time: {d} us", .{tokenize_time});
-    //std.log.info("Compile Time: {d} us", .{compile_time});
-    //std.log.info("Total Time: {d} us", .{lexer_time + tokenize_time + compile_time});
-    //std.log.info("Total Time per Byte: {d} us", .{@as(f32, @floatFromInt(lexer_time + tokenize_time + compile_time)) / @as(f32, @floatFromInt(markdown.len))});
 
     var router = try Router.init(allocator);
     defer router.deinit();
@@ -90,6 +37,10 @@ pub fn main() !void {
         .workers = 1,
     });
 }
+
+const lexer = @import("lexer.zig");
+const tokenizer = @import("tokenizer.zig");
+const compiler = @import("compiler.zig");
 
 test "main" {
     std.testing.refAllDeclsRecursive(lexer);
