@@ -241,4 +241,5 @@ img {
     border-radius: 0.5rem;
     min-height: 24rem;
     min-width: 32rem;
+    vertical-align: top;
 }

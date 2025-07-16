@@ -593,6 +593,7 @@ const TokenizerState = struct {
                 self.current += 1;
             }
 
+            if (lexemes.items.len < 1) continue;
             var tokens = try tokenize(lexemes);
             errdefer tokens.deinit(lexemes.allocator);
 
@@ -651,8 +652,14 @@ const TokenizerState = struct {
             self.current += 1;
         }
 
-        children.shrinkRetainingCapacity(children.items.len - 1);
-        children.items[children.items.len - 1].has_following_space = false;
+        if (children.items.len <= 1) {
+            children.deinit(self.allocator);
+            return;
+        }
+        const new_capacity = children.items.len - 1;
+
+        children.shrinkRetainingCapacity(new_capacity);
+        children.items[new_capacity - 1].has_following_space = false;
 
         try self.tokens.append(self.allocator, .{
             .token_type = start_lexeme.lexeme_type,
@@ -695,8 +702,14 @@ const TokenizerState = struct {
             self.current += 1;
         }
 
-        children.shrinkRetainingCapacity(children.items.len - 1);
-        children.items[children.items.len - 1].has_following_space = false;
+        if (children.items.len <= 1) {
+            children.deinit(self.allocator);
+            return;
+        }
+        const new_capacity = children.items.len - 1;
+
+        children.shrinkRetainingCapacity(new_capacity);
+        children.items[new_capacity - 1].has_following_space = false;
 
         try self.tokens.append(self.allocator, .{
             .token_type = .code_block,

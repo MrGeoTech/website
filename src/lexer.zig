@@ -58,9 +58,11 @@ const LexerState = struct {
     fn scanNewLine(state: *LexerState) error{ OutOfMemory, InvalidHeader }!void {
         if (state.current >= state.markdown.len) return;
         if (state.markdown[state.current] == ' ') {
-            if (state.current + 1 >= state.markdown.len) return;
-            state.current += 1;
-            state.start += 1;
+            while (state.matches(4)) try state.addLexeme(.indent);
+            while (state.current < state.markdown.len and state.markdown[state.current] == ' ') state.current += 1;
+            state.start = state.current;
+            try state.scanNewLine();
+            return;
         }
 
         const char = state.markdown[state.current];
@@ -158,7 +160,7 @@ const LexerState = struct {
             },
             '`' => {
                 // Return if the code block doesn't start the the start of the line
-                if (state.current > 0 and state.markdown[state.current - 1] != '\n') return;
+                //if (state.current > 0 and state.markdown[state.current - 1] != '\n') return;
 
                 if (!state.matches(3)) return;
                 try state.addLexeme(.code_block);
@@ -188,15 +190,7 @@ const LexerState = struct {
                     try state.addLexeme(.math_block);
                 }
             },
-            ' ' => {
-                // Adjust to skipping first space
-                state.current -= 1;
-                state.start -= 1;
-                while (state.matches(4)) try state.addLexeme(.indent);
-                while (state.markdown[state.current] == ' ') state.current += 1;
-                state.start = state.current;
-                try state.scanNewLine();
-            },
+            ' ' => unreachable,
             '\t' => {
                 while (state.markdown[state.current] == '\t') {
                     state.current += 1;

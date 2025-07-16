@@ -5,6 +5,8 @@ const Allocator = std.mem.Allocator;
 const Request = zap.Request;
 const Router = @This();
 
+pub const Error = std.http.Status;
+
 const eql = std.mem.eql;
 
 allocator: Allocator,
@@ -151,7 +153,7 @@ fn serveVI(self: *Router, request: Request) void {
     defer json.deinit();
     const location = json.value.location[if (json.value.location[0] == '/') 1 else 0..];
 
-    const dir_path_end = std.mem.lastIndexOfScalar(u8, location, '/') orelse 0;
+    const dir_path_end = if (std.mem.lastIndexOfScalar(u8, location, '/')) |i| i + 1 else 0;
     const dir_path = if (dir_path_end == 0) "." else location[0..dir_path_end];
     std.log.debug("Dir: {s}", .{dir_path});
 
@@ -171,8 +173,8 @@ fn serveVI(self: *Router, request: Request) void {
         const display_name = getFileName(allocator, dir, file.name) catch |err|
             return self.handleError(request, err);
 
-        std.log.debug("Display name: {s}\nFile name: {s}", .{ display_name, location[dir_path_end + 1 ..] });
-        if (eql(u8, display_name, location[dir_path_end + 1 ..])) {
+        std.log.debug("Display name: {s}\nFile name: {s}", .{ display_name, location[dir_path_end..] });
+        if (eql(u8, display_name, location[dir_path_end..])) {
             file_name = allocator.dupe(u8, file.name) catch |err|
                 return self.handleError(request, err);
             std.log.debug("True", .{});
@@ -204,6 +206,14 @@ fn serveVI(self: *Router, request: Request) void {
 
     const lexemes = @import("lexer.zig").process(allocator, markdown) catch |err|
         return self.handleError(request, err);
+
+    var writer = std.io.getStdOut().writer();
+    for (lexemes.items) |lexeme| {
+        lexeme.write(writer) catch |err|
+            self.handleError(request, err);
+        writer.writeByte('\n') catch |err|
+            self.handleError(request, err);
+    }
 
     const tokens = @import("tokenizer.zig").tokenize(lexemes) catch |err|
         return self.handleError(request, err);

@@ -269,8 +269,13 @@ fn appendText(
     text: []const u8,
     comptime options: CompileOptions,
 ) error{OutOfMemory}!void {
-    _ = options;
+    if (!options.ignore_paragraph_start and !state.is_in_paragraph)
+        try startParagraph(state);
+
     try state.html.writeAll(text);
+
+    if (state.tokens[state.current].has_following_space)
+        try state.html.writeByte(' ');
 }
 
 fn appendImage(
