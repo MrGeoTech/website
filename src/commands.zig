@@ -8,9 +8,22 @@ const Allocator = std.mem.Allocator;
 
 const assert = std.debug.assert;
 
-pub const ListElement = struct { file_name: []const u8, is_file: bool };
+pub const LSError = error{OutOfMemory} || RouterError;
+pub const LSList = std.ArrayList(ListElement);
+pub const ListElement = struct { 
+    file_name: []const u8,
+    is_file: bool,
 
-pub fn list(allocator: Allocator, path_in: []const u8, path_cwd: []const u8) RouterError!std.ArrayList(ListElement) {
+    pub fn appendTo(list: *LSList, name: []const u8, is_file: bool) error{OutOfMemory}!void {
+        const allocator = list.allocator;
+        try list.append(.{
+            .file_name = try allocator.dupe(u8, name),
+            .is_file = is_file,
+        });
+    }
+};
+
+pub fn list(allocator: Allocator, path_in: []const u8, path_cwd: []const u8) !LSList {
     const path_dir = try std.fs.cwd().realpathAlloc(allocator, path_in);
     defer allocator.free();
 
@@ -36,7 +49,7 @@ pub fn list(allocator: Allocator, path_in: []const u8, path_cwd: []const u8) Rou
     };
     defer dir.close();
 
-    var list = std.ArrayList(ListElement).init(allocator);
+    var list = LSList.init(allocator);
     errdefer list.deinit();
 
     const iterator = dir.iterate();
@@ -47,7 +60,7 @@ pub fn list(allocator: Allocator, path_in: []const u8, path_cwd: []const u8) Rou
         }
     ) |sub_file| {
         switch (sub_file.kind) {
-            .directory => 
+            .directory => try ListElement.appendTo(list, sub_file.name, false);
         }
     }
 }
