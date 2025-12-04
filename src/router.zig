@@ -1,5 +1,6 @@
 const std = @import("std");
-const zap = @import("zap");
+const http = std.http;
+//const zap = @import("zap");
 
 const Allocator = std.mem.Allocator;
 const Request = zap.Request;
@@ -13,14 +14,17 @@ allocator: Allocator,
 /// This should only be used for the paths of the static files.
 /// Everything else should be deallocated explicitly
 arena: *std.heap.ArenaAllocator,
+server: http.Server,
 docs_dir: std.fs.Dir,
 docs_dir_path: []const u8,
 static_dir: std.fs.Dir,
 static_dir_path: []const u8,
 
-pub fn init(allocator: Allocator) !Router {
+pub fn init(allocator: Allocator, input: *std.io.Reader, output: *std.io.Writer) !Router {
     const arena = try allocator.create(std.heap.ArenaAllocator);
     arena.* = std.heap.ArenaAllocator.init(allocator);
+
+    const server = http.Server.init(input, output);
 
     var docs_dir = try std.fs.cwd().openDir("docs", .{});
     errdefer docs_dir.close();

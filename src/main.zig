@@ -1,11 +1,19 @@
 const builtin = @import("builtin");
 const std = @import("std");
-const zap = @import("zap");
+const router = @import("router2.zig");
+//const zap = @import("zap");
 
-const Router = @import("router.zig");
+//const Router = @import("router.zig");
 const Allocator = std.mem.Allocator;
 
 const assert = std.debug.assert;
+
+const ConnectionData = struct {
+    connection: std.net.Server.Connection,
+    http: std.http.Server,
+    buffer_reader: []u8,
+    buffer_writer: []u8,
+};
 
 pub fn main() !void {
     std.log.info("Setting up server...", .{});
@@ -15,27 +23,55 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
-    var router = try Router.init(allocator);
-    defer router.deinit();
-
-    var router_zap = try router.getRouter();
-    defer router_zap.deinit();
+    std.debug.print("\n{d}\n", .{std.heap.defaultQueryPageSize()});
 
     std.log.info("Starting server", .{});
     defer std.log.info("Stopping server", .{});
 
-    var listener = zap.HttpListener.init(.{
-        .port = if (builtin.mode == .Debug) 8080 else 82,
-        .on_request = router_zap.on_request_handler(),
-        .log = true,
-        .max_clients = 10_000,
+    const address = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, 8080);
+    const server = try address.listen(.{
+        .force_nonblocking = true,
     });
-    try listener.listen();
 
-    zap.start(.{
-        .threads = 1,
-        .workers = 1,
-    });
+    var connections = try std.ArrayList(ConnectionData).initCapacity(allocator, 64);
+    defer connections.deinit(allocator);
+
+
+    while (true) {
+        accept_blk: {
+            const connection = server.accept() catch |err| switch (err) {
+                .WouldBlock => break :accept_blk,
+                else => return err,
+            };
+
+            const buffer_reader = try allocator.alloc(u8, std.heap.defaultQueryPageSize());
+            defer allocator.free(buffer_reader);
+            const buffer_writer = try allocator.alloc(u8, std.heap.defaultQueryPageSize());
+            defer allocator.free(buffer_writer);
+            
+            var reader = connection.stream.reader(buffer_reader);
+            var writer = connection.stream.writer(buffer_writer);
+
+            const http = std.http.Server.init(reader.interface(), &writer.interface);
+
+            try connections.append(allocator, .{
+                .connection = connection,
+                .http = http,
+                .buffer_reader = buffer_reader,
+                .buffer_writer = buffer_writer,
+            });
+        }
+
+        request_blk: {
+            for (connections.items) |connection_data| {
+                const request = connection_data.http.receiveHead() catch |err| switch (err) {
+                    .WouldBlock => continue,
+                    else => return err,
+                };
+                try router.handleRequest(allocator, request);
+            }
+        }
+    }
 }
 
 const lexer = @import("lexer.zig");

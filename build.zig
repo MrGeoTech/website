@@ -6,11 +6,11 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const zap = b.dependency("zap", .{
-        .target = target,
-        .optimize = optimize,
-        .openssl = false,
-    });
+    //const zap = b.dependency("zap", .{
+    //    .target = target,
+    //    .optimize = optimize,
+    //    .openssl = false,
+    //});
 
     const root_module = b.addModule(name, .{
         .root_source_file = b.path("src/main.zig"),
@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) !void {
         .name = name,
         .root_module = root_module,
     });
-    exe.root_module.addImport("zap", zap.module("zap"));
+    //exe.root_module.addImport("zap", zap.module("zap"));
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -131,7 +131,7 @@ const PrintOutputLocation = struct {
 
         const print: *PrintOutputLocation = @fieldParentPtr("step", step);
 
-        try std.io..writer().print(
+        std.debug.print(
             "Test coverage can be viewed at: {s}\n",
             .{print.output_url},
         );
