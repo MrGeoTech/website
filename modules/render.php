@@ -62,6 +62,42 @@ function removeMetaTags($filePath) {
     return $content;
 }
 
+
+function preprocessMarkdownMath($content) {
+    // Characters that need to be escaped in markdown
+    $markdownChars = ['*', '_', '`', '[', ']', '(', ')', '#', '+', '-', '.', '!', '|', '>', '<'];
+    
+    // Process display math blocks ($$...$$) first to avoid conflicts
+    $content = preg_replace_callback(
+        '/\$\$(.*?)\$\$/s',
+        function($matches) use ($markdownChars) {
+            $mathContent = $matches[1];
+            // Escape markdown characters
+            foreach ($markdownChars as $char) {
+                $mathContent = str_replace($char, '\\' . $char, $mathContent);
+            }
+            return '$$' . $mathContent . '$$';
+        },
+        $content
+    );
+    
+    // Process inline math blocks ($...$)
+    $content = preg_replace_callback(
+        '/(?<!\$)\$(?!\$)(.*?)(?<!\$)\$(?!\$)/s',
+        function($matches) use ($markdownChars) {
+            $mathContent = $matches[1];
+            // Escape markdown characters
+            foreach ($markdownChars as $char) {
+                $mathContent = str_replace($char, '\\' . $char, $mathContent);
+            }
+            return '$' . $mathContent . '$';
+        },
+        $content
+    );
+    
+    return $content;
+}
+
 function updateRelativeLinksInHtml($html, $basePath) {
     // Create a DOMDocument instance
     $dom = new DOMDocument();
@@ -202,6 +238,7 @@ function renderFile($file) {
     // Render markdown as HTML
     $parsedown = new Parsedown();
     $content = removeMetaTags($filePath);
+    $content = preprocessMarkdownMath($content);
     
     // Convert Markdown to HTML
     $htmlContent = $parsedown->text($content);
