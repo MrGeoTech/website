@@ -65,7 +65,7 @@ function removeMetaTags($filePath) {
 
 function preprocessMarkdownMath($content) {
     // Characters that need to be escaped in markdown
-    $markdownChars = ['*', '_', '`', '[', ']', '(', ')', '#', '+', '-', '.', '!', '|', '>', '<'];
+    $markdownChars = ['*', '_', '`', '[', ']', '(', ')', '#', '+', '-', '.', '!', '|'];
     
     // Process display math blocks ($$...$$) first to avoid conflicts
     $content = preg_replace_callback(
